@@ -4,6 +4,11 @@ import numpy as np
 from torch.nn.utils.clip_grad import clip_grad_norm_
 from maml.utils import accuracy
 
+from advertorch.attacks import GradientSignAttack, LinfPGDAttack, CarliniWagnerL2Attack
+from maml.datasets.metadataset import Task
+import copy
+from collections import OrderedDict
+
 def get_grad_norm(parameters, norm_type=2):
     if isinstance(parameters, torch.Tensor):
         parameters = [parameters]
@@ -43,6 +48,32 @@ class MetaLearner(object):
         self.to(device)
 
         self._reset_measurements()
+
+        self.set_adversary(self._model)
+        # self._attack_model = copy.deepcopy(self._model)
+
+    def set_adversary(self, model, attack_params=['CW', 0.01, 40]):
+        method = attack_params[0]
+        eps = attack_params[1]
+        model = model.forward_single
+        if method == 'FGSM':
+            adversary = GradientSignAttack(model, eps=eps)
+        elif method == 'PGD':
+            nb_iter = attack_params[2]
+            adversary = LinfPGDAttack(model, eps=eps, nb_iter=nb_iter)
+        elif method == 'CW':
+            adversary = CarliniWagnerL2Attack(model, num_classes=5, max_iterations=10)
+        else:
+            assert False
+        self._adversary = adversary
+
+    def gen_adv_task(self, task):
+        # self.set_adversary(self._model)
+        # adv_task = Task()
+        copy_task = copy.deepcopy(task)
+        adv_x = self._adversary.perturb(copy_task.x, copy_task.y)
+        adv_task = Task(adv_x, copy_task.y, 'adv_task')
+        return adv_task
 
     def _reset_measurements(self):
         self._count_iters = 0.0
@@ -159,11 +190,30 @@ class MetaLearner(object):
 
         for adapted_params, embeddings, task in zip(
                 adapted_params_list, embeddings_list, val_tasks):
+            # print ('hehe')
+            # self._tmp_model = copy.deepcopy(self._model)
+            # print (adapted_params)
+            # print (self._model.state_dict())
+            # import ipdb,torch
+            from collections import OrderedDict
+            # ipdb.set_trace()
+            # a = torch.Tensor(adapted_params['features.layer1_conv.bias'], grad_fn=None)
+            # a = adapted_params['features.layer1_conv.bias'].detach()
+            # print (a)
+            tmp = OrderedDict()
+            for k in adapted_params.keys():
+                tmp[k] = adapted_params[k].detach()
+            self._model.update_tmp_params(tmp)
+            task = self.gen_adv_task(task)
+            # assert False
+            self._model.update_tmp_params(None)
+
             preds = self._model(task, params=adapted_params,
                                 embeddings=embeddings)
             loss = self._loss_func(preds, task.y)
             post_update_losses.append(loss)
             self._update_measurements(task, loss, preds)
+        # print ('end')
 
         mean_loss = torch.mean(torch.stack(post_update_losses))
         if is_training:
