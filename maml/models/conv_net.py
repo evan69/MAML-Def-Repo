@@ -34,6 +34,8 @@ class ConvModel(Model):
         self._reuse = False
         self._verbose = verbose
 
+        self.update_tmp_params(None)
+
         if self._use_max_pool:
             self._conv_stride = 1
             self._features_size = 1
@@ -131,12 +133,23 @@ class ConvModel(Model):
         ]))
         self.apply(weight_init)
 
+
+    def update_tmp_params(self, params):
+        self._tmp_params = params
+
+
     def forward(self, task, params=None, embeddings=None):
+        return self.forward_single(task.x, params, embeddings)
+
+
+    def forward_single(self, x, params=None, embeddings=None):
         if not self._reuse and self._verbose: print('='*10 + ' Model ' + '='*10)
         if params is None:
             params = OrderedDict(self.named_parameters())
+        if self._tmp_params != None:
+            params = self._tmp_params
 
-        x = task.x
+        # x = task.x
         if not self._reuse and self._verbose: print('input size: {}'.format(x.size()))
         for layer_name, layer in self.features.named_children():
             weight = params.get('features.' + layer_name + '.weight', None)
