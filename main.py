@@ -452,6 +452,8 @@ def main(args):
             optimizers[1].load_state_dict(checkpoint['optimizers'][1])
             optimizer_to_device(optimizers[1], args.device)
 
+    attack_params = ['PGD', 0.1, 20]
+
     meta_learner = MetaLearner(
         model, embedding_model, optimizers, fast_lr=args.fast_lr,
         loss_func=loss_func, first_order=args.first_order,
@@ -459,7 +461,9 @@ def main(args):
         inner_loop_grad_clip=args.inner_loop_grad_clip,
         collect_accuracies=collect_accuracies, device=args.device,
         alternating=args.alternating, embedding_schedule=args.embedding_schedule,
-        classifier_schedule=args.classifier_schedule, embedding_grad_clip=args.embedding_grad_clip)
+        classifier_schedule=args.classifier_schedule, embedding_grad_clip=args.embedding_grad_clip,
+        attack_params=attack_params
+    )
 
     trainer = Trainer(
         meta_learner=meta_learner, meta_dataset=dataset, writer=writer,
