@@ -18,13 +18,13 @@ def get_grad_norm(parameters, norm_type=2):
     return total_norm
 
 class MetaLearner(object):
-    def __init__(self, model, embedding_model, optimizers, fast_lr, loss_func,
+    def __init__(self, model, optimizers, fast_lr, loss_func,
                  first_order, num_updates, inner_loop_grad_clip,
                  collect_accuracies, device, alternating=False,
                  embedding_schedule=10, classifier_schedule=10,
                  embedding_grad_clip=0):
         self._model = model
-        self._embedding_model = embedding_model
+        self._embedding_model = False
         self._fast_lr = fast_lr
         self._optimizers = optimizers
         self._loss_func = loss_func
