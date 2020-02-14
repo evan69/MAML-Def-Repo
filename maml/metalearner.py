@@ -27,7 +27,7 @@ class MetaLearner(object):
                  first_order, num_updates, inner_loop_grad_clip,
                  collect_accuracies, device, alternating=False,
                  embedding_schedule=10, classifier_schedule=10,
-                 embedding_grad_clip=0):
+                 embedding_grad_clip=0, attack_params=None):
         self._model = model
         self._embedding_model = embedding_model
         self._fast_lr = fast_lr
@@ -43,16 +43,19 @@ class MetaLearner(object):
         self._alternating_count = 0
         self._alternating_index = 1
         self._embedding_grad_clip = embedding_grad_clip
+        self._attack_params = attack_params
         self._grads_mean = []
 
         self.to(device)
 
         self._reset_measurements()
 
-        self.set_adversary(self._model)
+        self.set_adversary(self._model, attack_params=attack_params)
         # self._attack_model = copy.deepcopy(self._model)
 
     def set_adversary(self, model, attack_params=['CW', 0.01, 40]):
+        if attack_params == None:
+            return
         method = attack_params[0]
         eps = attack_params[1]
         model = model.forward_single
@@ -190,23 +193,14 @@ class MetaLearner(object):
 
         for adapted_params, embeddings, task in zip(
                 adapted_params_list, embeddings_list, val_tasks):
-            # print ('hehe')
-            # self._tmp_model = copy.deepcopy(self._model)
-            # print (adapted_params)
-            # print (self._model.state_dict())
-            # import ipdb,torch
-            from collections import OrderedDict
-            # ipdb.set_trace()
-            # a = torch.Tensor(adapted_params['features.layer1_conv.bias'], grad_fn=None)
-            # a = adapted_params['features.layer1_conv.bias'].detach()
-            # print (a)
-            tmp = OrderedDict()
-            for k in adapted_params.keys():
-                tmp[k] = adapted_params[k].detach()
-            self._model.update_tmp_params(tmp)
-            task = self.gen_adv_task(task)
-            # assert False
-            self._model.update_tmp_params(None)
+            if self._attack_params != None:
+                from collections import OrderedDict
+                tmp = OrderedDict()
+                for k in adapted_params.keys():
+                    tmp[k] = adapted_params[k].detach()
+                self._model.update_tmp_params(tmp)
+                task = self.gen_adv_task(task)
+                self._model.update_tmp_params(None)
 
             preds = self._model(task, params=adapted_params,
                                 embeddings=embeddings)
