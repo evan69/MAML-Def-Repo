@@ -82,13 +82,23 @@ class MetaLearner(object):
         self._count_iters = 0.0
         self._cum_loss = 0.0
         self._cum_accuracy = 0.0
+        # for adv
+        self._adv_loss = 0.0
+        self._adv_accuracy = 0.0
 
-    def _update_measurements(self, task, loss, preds):
+    def _update_measurements(self, task, loss, preds, adv_task=None, adv_loss=None, adv_preds=None):
         self._count_iters += 1.0
         self._cum_loss += loss.data.cpu().numpy()
         if self._collect_accuracies:
             self._cum_accuracy += accuracy(
                 preds, task.y).data.cpu().numpy()
+
+        if adv_task == None:
+            return
+        self._adv_loss += adv_loss.data.cpu().numpy()
+        if self._collect_accuracies:
+            self._adv_accuracy += accuracy(
+                adv_preds, adv_task.y).data.cpu().numpy()
 
     def _pop_measurements(self):
         measurements = {}
@@ -97,6 +107,14 @@ class MetaLearner(object):
         if self._collect_accuracies:
             accuracy = self._cum_accuracy / self._count_iters
             measurements['accuracy'] = accuracy
+
+        # for adv
+        adv_loss = self._adv_loss / self._count_iters
+        measurements['adv_loss'] = adv_loss
+        if self._collect_accuracies:
+            adv_accuracy = self._adv_accuracy / self._count_iters
+            measurements['adv_accuracy'] = adv_accuracy
+
         self._reset_measurements()
         return measurements
 
@@ -199,14 +217,25 @@ class MetaLearner(object):
                 for k in adapted_params.keys():
                     tmp[k] = adapted_params[k].detach()
                 self._model.update_tmp_params(tmp)
-                task = self.gen_adv_task(task)
+                adv_task = self.gen_adv_task(task)
                 self._model.update_tmp_params(None)
+            else:
+                adv_task = None
+                adv_loss = None
+                adv_preds = None
 
             preds = self._model(task, params=adapted_params,
                                 embeddings=embeddings)
             loss = self._loss_func(preds, task.y)
             post_update_losses.append(loss)
-            self._update_measurements(task, loss, preds)
+            # self._update_measurements(task, loss, preds)
+
+            if adv_task != None:
+                adv_preds = self._model(adv_task)
+                adv_loss = self._loss_func(adv_preds, adv_task.y)
+                # self._update_measurements(adv_task, adv_loss, adv_preds)
+                # print (loss, adv_loss)
+            self._update_measurements(task, loss, preds, adv_task, adv_loss, adv_preds)
         # print ('end')
 
         mean_loss = torch.mean(torch.stack(post_update_losses))

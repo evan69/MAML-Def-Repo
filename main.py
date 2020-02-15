@@ -32,6 +32,8 @@ def main(args):
     if is_training:
         writer = SummaryWriter('./train_dir/{0}/{1}'.format(
             args.output_folder, run_name))
+        adv_writer = SummaryWriter('./train_dir/{0}/{1}_adv'.format(
+            args.output_folder, run_name))
         with open('./train_dir/{}/config.txt'.format(
             args.output_folder), 'w') as config_txt:
             for k, v in sorted(vars(args).items()):
@@ -452,7 +454,7 @@ def main(args):
             optimizers[1].load_state_dict(checkpoint['optimizers'][1])
             optimizer_to_device(optimizers[1], args.device)
 
-    attack_params = ['PGD', 0.1, 20]
+    attack_params = ['FGSM', 0.1, 20]
 
     meta_learner = MetaLearner(
         model, embedding_model, optimizers, fast_lr=args.fast_lr,
@@ -466,7 +468,7 @@ def main(args):
     )
 
     trainer = Trainer(
-        meta_learner=meta_learner, meta_dataset=dataset, writer=writer,
+        meta_learner=meta_learner, meta_dataset=dataset, writer=[writer, adv_writer],
         log_interval=args.log_interval, save_interval=args.save_interval,
         model_type=args.model_type, save_folder=save_folder,
         total_iter=args.num_batches//args.meta_batch_size

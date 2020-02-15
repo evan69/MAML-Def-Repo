@@ -10,7 +10,8 @@ class Trainer(object):
                  save_interval, model_type, save_folder, total_iter):
         self._meta_learner = meta_learner
         self._meta_dataset = meta_dataset
-        self._writer = writer
+        self._writer = writer[0]
+        self._adv_writer = writer[1]
         self._log_interval = log_interval
         self._save_interval = save_interval
         self._model_type = model_type
@@ -155,6 +156,11 @@ class Trainer(object):
         if embedding_grads_mean is not None:
             self._writer.add_scalar(
                 'embedding_grads_mean', embedding_grads_mean, iteration)
+
+        for key, value in post_val_measurements.items():
+            if 'adv_' in key:
+                self._adv_writer.add_scalar(
+                    '{}/after_update/meta_val'.format(key[4:]), value, iteration)
 
     def log_output(self, pre_val_measurements, pre_train_measurements,
                    post_val_measurements, post_train_measurements, 
