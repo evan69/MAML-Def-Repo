@@ -40,6 +40,7 @@ def main(args):
                 config_txt.write('{}: {}\n'.format(k, v))
     else:
         writer = None
+        adv_writer = None
 
     save_folder = './train_dir/{0}'.format(args.output_folder)
     if not os.path.exists(save_folder):
@@ -442,6 +443,8 @@ def main(args):
         checkpoint = torch.load(args.checkpoint)
         model.load_state_dict(checkpoint['model_state_dict'])
         model.to(args.device)
+        if not is_training:
+          model.eval()
         if 'optimizer' in checkpoint:
           pass
         else:
