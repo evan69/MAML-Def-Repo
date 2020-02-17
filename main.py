@@ -457,7 +457,9 @@ def main(args):
             optimizers[1].load_state_dict(checkpoint['optimizers'][1])
             optimizer_to_device(optimizers[1], args.device)
 
-    attack_params = ['FGSM', 0.1, 20]
+    # generate attack param
+    # attack_params = ['FGSM', 0.1, 20]
+    attack_params = [args.attack_name, args.attack_eps, args.attack_step]
 
     meta_learner = MetaLearner(
         model, embedding_model, optimizers, fast_lr=args.fast_lr,
@@ -638,6 +640,11 @@ if __name__ == '__main__':
         help='')
     parser.add_argument('--verbose', type=str2bool, default=False,
         help='')
+
+    # attack
+    parser.add_argument('--attack-name', type=str, default='FGSM', help='')
+    parser.add_argument('--attack-eps', type=float, default=0.01, help='')
+    parser.add_argument('--attack-step', type=int, default=20, help='')
 
     args = parser.parse_args()
 
