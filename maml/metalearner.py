@@ -232,7 +232,7 @@ class MetaLearner(object):
             # self._update_measurements(task, loss, preds)
 
             if adv_task != None:
-                adv_preds = self._model(adv_task)
+                adv_preds = self._model(adv_task, params=adapted_params, embeddings=embeddings)
                 adv_loss = self._loss_func(adv_preds, adv_task.y)
                 # self._update_measurements(adv_task, adv_loss, adv_preds)
                 # print (loss, adv_loss)
