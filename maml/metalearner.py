@@ -50,10 +50,10 @@ class MetaLearner(object):
 
         self._reset_measurements()
 
-        self.set_adversary(self._model, attack_params=attack_params)
+        self._adversary = self.get_adversary(self._model, attack_params=attack_params)
         # self._attack_model = copy.deepcopy(self._model)
 
-    def set_adversary(self, model, attack_params=['CW', 0.01, 40]):
+    def get_adversary(self, model, attack_params):
         if attack_params == None:
             return
         method = attack_params[0]
@@ -68,13 +68,14 @@ class MetaLearner(object):
             adversary = CarliniWagnerL2Attack(model, num_classes=5, max_iterations=10)
         else:
             assert False
+        return adversary
         self._adversary = adversary
 
-    def gen_adv_task(self, task):
+    def gen_adv_task(self, task, adversary):
         # self.set_adversary(self._model)
         # adv_task = Task()
         copy_task = copy.deepcopy(task)
-        adv_x = self._adversary.perturb(copy_task.x, copy_task.y)
+        adv_x = adversary.perturb(copy_task.x, copy_task.y)
         adv_task = Task(adv_x, copy_task.y, 'adv_task')
         return adv_task
 
@@ -217,7 +218,7 @@ class MetaLearner(object):
                 for k in adapted_params.keys():
                     tmp[k] = adapted_params[k].detach()
                 self._model.update_tmp_params(tmp)
-                adv_task = self.gen_adv_task(task)
+                adv_task = self.gen_adv_task(task, self._adversary)
                 self._model.update_tmp_params(None)
             else:
                 adv_task = None
