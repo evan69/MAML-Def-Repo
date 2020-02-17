@@ -236,6 +236,8 @@ class MetaLearner(object):
                 # self._update_measurements(adv_task, adv_loss, adv_preds)
                 # print (loss, adv_loss)
             self._update_measurements(task, loss, preds, adv_task, adv_loss, adv_preds)
+            # implement Adv Querying here
+            loss = adv_loss
         # print ('end')
 
         mean_loss = torch.mean(torch.stack(post_update_losses))
