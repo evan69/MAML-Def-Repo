@@ -27,7 +27,7 @@ class MetaLearner(object):
                  first_order, num_updates, inner_loop_grad_clip,
                  collect_accuracies, device, alternating=False,
                  embedding_schedule=10, classifier_schedule=10,
-                 embedding_grad_clip=0, attack_params=None):
+                 embedding_grad_clip=0, attack_params=None, adv_train='none'):
         self._model = model
         self._embedding_model = embedding_model
         self._fast_lr = fast_lr
@@ -44,6 +44,7 @@ class MetaLearner(object):
         self._alternating_index = 1
         self._embedding_grad_clip = embedding_grad_clip
         self._attack_params = attack_params
+        self._adv_train = adv_train
         self._grads_mean = []
 
         self.to(device)
@@ -234,12 +235,10 @@ class MetaLearner(object):
             if adv_task != None:
                 adv_preds = self._model(adv_task, params=adapted_params, embeddings=embeddings)
                 adv_loss = self._loss_func(adv_preds, adv_task.y)
-                # self._update_measurements(adv_task, adv_loss, adv_preds)
-                # print (loss, adv_loss)
             self._update_measurements(task, loss, preds, adv_task, adv_loss, adv_preds)
             # implement Adv Querying here
-            loss = adv_loss
-        # print ('end')
+            if self._adv_train == 'AdvQ':
+                loss = adv_loss
 
         mean_loss = torch.mean(torch.stack(post_update_losses))
         if is_training:

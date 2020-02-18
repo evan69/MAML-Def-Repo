@@ -461,6 +461,10 @@ def main(args):
     # attack_params = ['FGSM', 0.1, 20]
     attack_params = [args.attack_name, args.attack_eps, args.attack_step]
 
+    # adv train option
+    if args.adv_train not in ['none', 'AdvQ', 'ADML']:
+        assert False
+
     meta_learner = MetaLearner(
         model, embedding_model, optimizers, fast_lr=args.fast_lr,
         loss_func=loss_func, first_order=args.first_order,
@@ -469,7 +473,7 @@ def main(args):
         collect_accuracies=collect_accuracies, device=args.device,
         alternating=args.alternating, embedding_schedule=args.embedding_schedule,
         classifier_schedule=args.classifier_schedule, embedding_grad_clip=args.embedding_grad_clip,
-        attack_params=attack_params
+        attack_params=attack_params, adv_train=args.adv_train
     )
 
     trainer = Trainer(
@@ -645,6 +649,9 @@ if __name__ == '__main__':
     parser.add_argument('--attack-name', type=str, default='FGSM', help='')
     parser.add_argument('--attack-eps', type=float, default=0.01, help='')
     parser.add_argument('--attack-step', type=int, default=20, help='')
+
+    # adv train options
+    parser.add_argument('--adv-train', type=str, default='none', help='')
 
     args = parser.parse_args()
 
