@@ -70,7 +70,7 @@ class MetaLearner(object):
         else:
             assert False
         return adversary
-        self._adversary = adversary
+        # self._adversary = adversary
 
     def gen_adv_task(self, task, adversary):
         # self.set_adversary(self._model)
@@ -186,11 +186,17 @@ class MetaLearner(object):
 
     def adapt(self, train_tasks):
         adapted_params = []
+        if self._adv_train == 'ADML':
+            adv_adapted_params = [] # an extra space for adv params
         embeddings_list = []
 
         for task in train_tasks:
             params = self._model.param_dict
             embeddings = None
+            if self._adv_train == 'ADML': # generate adv task for ADML train
+                adv_params = copy.deepcopy(params)
+                self._model.update_tmp_params(None) # attack current theta
+                adv_task = self.gen_adv_task(task, self._adversary)
             if self._embedding_model:
                 embeddings = self._embedding_model(task)
             for i in range(self._num_updates):
@@ -199,10 +205,19 @@ class MetaLearner(object):
                 params = self.update_params(loss, params=params)
                 if i == 0:
                     self._update_measurements(task, loss, preds)
+
+                if self._adv_train == 'ADML':
+                    adv_preds = self._model(adv_task, params=adv_params, embeddings=embeddings)
+                    adv_loss = self._loss_func(adv_preds, adv_task.y)
+                    adv_params = self.update_params(adv_loss, params=adv_params)
             adapted_params.append(params)
+            if self._adv_train == 'ADML':
+                adv_adapted_params.append(adv_params)
             embeddings_list.append(embeddings)
 
         measurements = self._pop_measurements()
+        if self._adv_train == 'ADML':
+            return measurements, [adapted_params, adv_adapted_params], embedding_list
         return measurements, adapted_params, embeddings_list
 
     def step(self, adapted_params_list, embeddings_list, val_tasks,
@@ -239,6 +254,8 @@ class MetaLearner(object):
             # implement Adv Querying here
             if self._adv_train == 'AdvQ':
                 loss = adv_loss
+            elif self._adv_train == 'ADML':
+                loss = 0.5 * loss + 0.5 * adv_loss
 
         mean_loss = torch.mean(torch.stack(post_update_losses))
         if is_training:
