@@ -186,27 +186,43 @@ class MetaLearner(object):
 
     def adapt(self, train_tasks):
         adapted_params = []
+
         if self._adv_train == 'ADML':
             adv_adapted_params = [] # an extra space for adv params
+
         embeddings_list = []
 
         for task in train_tasks:
             params = self._model.param_dict
             embeddings = None
+
+            # prepare adv tasks for ADML and new
             if self._adv_train == 'ADML': # generate adv task for ADML train
                 adv_params = copy.deepcopy(params)
                 self._model.update_tmp_params(None) # attack current theta
                 adv_task = self.gen_adv_task(task, self._adversary)
+            elif self._adv_train == 'new': # generate adv task list for new method
+                self._model.update_tmp_params(None) # attack current theta
+                adv_task_list = []
+                for adversary in self._adversary_list:
+                    adv_task = self.gen_adv_task(task,adversary)
+                    adv_task_list.append(adv_task)
+
             if self._embedding_model:
                 embeddings = self._embedding_model(task)
             for i in range(self._num_updates):
                 preds = self._model(task, params=params, embeddings=embeddings)
                 loss = self._loss_func(preds, task.y)
+                if self._adv_train == 'new': # TODO: bug here: should do adv train for each adv task
+                    adv_task = adv_task_list[0]
+                    adv_preds = self._model(adv_task, params=adv_params, embeddings=embeddings)
+                    adv_loss = self._loss_func(adv_preds, adv_task.y)
+                    loss += 0.2 * adv_loss
                 params = self.update_params(loss, params=params)
                 if i == 0:
                     self._update_measurements(task, loss, preds)
 
-                if self._adv_train == 'ADML':
+                if self._adv_train == 'ADML': # generate theta_adv for ADML
                     adv_preds = self._model(adv_task, params=adv_params, embeddings=embeddings)
                     adv_loss = self._loss_func(adv_preds, adv_task.y)
                     adv_params = self.update_params(adv_loss, params=adv_params)
@@ -217,7 +233,8 @@ class MetaLearner(object):
 
         measurements = self._pop_measurements()
         if self._adv_train == 'ADML':
-            return measurements, [adapted_params, adv_adapted_params], embedding_list
+            # return measurements, [adapted_params, adv_adapted_params], embeddings_list
+            self._adv_adapted_params = adv_adapted_params
         return measurements, adapted_params, embeddings_list
 
     def step(self, adapted_params_list, embeddings_list, val_tasks,
@@ -226,8 +243,12 @@ class MetaLearner(object):
             optimizer.zero_grad()
         post_update_losses = []
 
-        for adapted_params, embeddings, task in zip(
-                adapted_params_list, embeddings_list, val_tasks):
+        for index, (adapted_params, embeddings, task) in enumerate(zip(
+                adapted_params_list, embeddings_list, val_tasks)):
+            if self._adv_train == 'ADML':
+                adv_adapted_params = self._adv_adapted_params[index]
+                # adv_adapted_params = adapted_params[1]
+                # adapted_params = adapted_params[0]
             if self._attack_params != None:
                 from collections import OrderedDict
                 tmp = OrderedDict()
@@ -255,7 +276,13 @@ class MetaLearner(object):
             if self._adv_train == 'AdvQ':
                 loss = adv_loss
             elif self._adv_train == 'ADML':
-                loss = 0.5 * loss + 0.5 * adv_loss
+            # bug here - fixed
+                ThetaC_DA_loss = adv_loss
+                ac_preds = self._model(task, params=adv_adapted_params, embeddings=embeddings)
+                ThetaA_DC_loss = self._loss_func(adv_preds, adv_task.y)
+                loss = ThetaC_DA_loss + ThetaA_DC_loss
+            elif self._adv_train == 'new':
+                pass # TODO
 
         mean_loss = torch.mean(torch.stack(post_update_losses))
         if is_training:
