@@ -54,6 +54,18 @@ class MetaLearner(object):
         self._adversary = self.get_adversary(self._model, attack_params=attack_params)
         # self._attack_model = copy.deepcopy(self._model)
 
+        # for new method
+        if self._adv_train == 'new':
+            attack_params_list = [['FGSM', 0.1, 0],
+                                  ['PGD', 0.01, 40],
+                                  ['PGD', 0.03, 20],
+                                  ['PGD', 0.05, 10],]
+            self._adversary_list = []
+            # generate adversaries for new method
+            for att in attack_params_list:
+                adversary_for_new = self.get_adversary(self._model, att)
+                self._adversary_list.append(adversary_for_new)
+
     def get_adversary(self, model, attack_params):
         if attack_params == None:
             return
@@ -187,7 +199,7 @@ class MetaLearner(object):
     def adapt(self, train_tasks):
         adapted_params = []
 
-        if self._adv_train == 'ADML':
+        if self._adv_train == 'ADML' or self._adv_train == 'new':
             adv_adapted_params = [] # an extra space for adv params
 
         embeddings_list = []
@@ -202,9 +214,10 @@ class MetaLearner(object):
                 self._model.update_tmp_params(None) # attack current theta
                 adv_task = self.gen_adv_task(task, self._adversary)
             elif self._adv_train == 'new': # generate adv task list for new method
-                self._model.update_tmp_params(None) # attack current theta
+                adv_params = copy.deepcopy(params) # generate init params for attack #0
+                self._model.update_tmp_params(None) # attack current theta for adv train
                 adv_task_list = []
-                for adversary in self._adversary_list:
+                for adversary in self._adversary_list[:2]: # extract 2 attacks
                     adv_task = self.gen_adv_task(task,adversary)
                     adv_task_list.append(adv_task)
 
@@ -214,10 +227,20 @@ class MetaLearner(object):
                 preds = self._model(task, params=params, embeddings=embeddings)
                 loss = self._loss_func(preds, task.y)
                 if self._adv_train == 'new': # TODO: bug here: should do adv train for each adv task
+                    # attack #0 store in adv_loss
                     adv_task = adv_task_list[0]
                     adv_preds = self._model(adv_task, params=adv_params, embeddings=embeddings)
                     adv_loss = self._loss_func(adv_preds, adv_task.y)
-                    loss += 0.2 * adv_loss
+                    adv_loss = loss + 0.2 * adv_loss
+
+                    # attack #1 store in loss
+                    adv_task = adv_task_list[1]
+                    adv_preds = self._model(adv_task, params=params, embeddings=embeddings)
+                    adv_loss = self._loss_func(adv_preds, adv_task.y)
+                    loss = loss + 0.2 * adv_loss
+
+                    # calculate params for attack #0 in adv_loss
+                    adv_params = self.update_params(adv_loss, params=adv_params)
                 params = self.update_params(loss, params=params)
                 if i == 0:
                     self._update_measurements(task, loss, preds)
@@ -227,12 +250,13 @@ class MetaLearner(object):
                     adv_loss = self._loss_func(adv_preds, adv_task.y)
                     adv_params = self.update_params(adv_loss, params=adv_params)
             adapted_params.append(params)
-            if self._adv_train == 'ADML':
+            if self._adv_train == 'ADML' or self._adv_train == 'new':
+            # for new method store attack #0 params
                 adv_adapted_params.append(adv_params)
             embeddings_list.append(embeddings)
 
         measurements = self._pop_measurements()
-        if self._adv_train == 'ADML':
+        if self._adv_train == 'ADML' or self._adv_train == 'new':
             # return measurements, [adapted_params, adv_adapted_params], embeddings_list
             self._adv_adapted_params = adv_adapted_params
         return measurements, adapted_params, embeddings_list
@@ -265,13 +289,14 @@ class MetaLearner(object):
             preds = self._model(task, params=adapted_params,
                                 embeddings=embeddings)
             loss = self._loss_func(preds, task.y)
-            post_update_losses.append(loss)
+            # post_update_losses.append(loss)
             # self._update_measurements(task, loss, preds)
 
             if adv_task != None:
                 adv_preds = self._model(adv_task, params=adapted_params, embeddings=embeddings)
                 adv_loss = self._loss_func(adv_preds, adv_task.y)
             self._update_measurements(task, loss, preds, adv_task, adv_loss, adv_preds)
+
             # implement Adv Querying here
             if self._adv_train == 'AdvQ':
                 loss = adv_loss
@@ -282,7 +307,11 @@ class MetaLearner(object):
                 ThetaA_DC_loss = self._loss_func(adv_preds, adv_task.y)
                 loss = ThetaC_DA_loss + ThetaA_DC_loss
             elif self._adv_train == 'new':
-                pass # TODO
+                # pass # TODO
+                loss = adv_loss
+                # same as AdvQ
+
+            post_update_losses.append(loss)
 
         mean_loss = torch.mean(torch.stack(post_update_losses))
         if is_training:
