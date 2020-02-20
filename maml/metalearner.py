@@ -9,6 +9,8 @@ from maml.datasets.metadataset import Task
 import copy
 from collections import OrderedDict
 
+import random
+
 def get_grad_norm(parameters, norm_type=2):
     if isinstance(parameters, torch.Tensor):
         parameters = [parameters]
@@ -201,6 +203,8 @@ class MetaLearner(object):
 
         if self._adv_train == 'ADML' or self._adv_train == 'new':
             adv_adapted_params = [] # an extra space for adv params
+        if self._adv_train == 'new':
+            random_idxs_list = [] # list that stores pair of attak ids for each task
 
         embeddings_list = []
 
@@ -217,7 +221,10 @@ class MetaLearner(object):
                 adv_params = copy.deepcopy(params) # generate init params for attack #0
                 self._model.update_tmp_params(None) # attack current theta for adv train
                 adv_task_list = []
-                for adversary in self._adversary_list[:2]: # extract 2 attacks
+                random_idx_pair = random.sample(range(len(self._adversary_list)), 2)
+                # for adversary in self._adversary_list[:2]: # extract 2 attacks
+                for idx in random_idx_pair:
+                    adversary = self._adversary_list[idx]
                     adv_task = self.gen_adv_task(task,adversary)
                     adv_task_list.append(adv_task)
 
