@@ -647,7 +647,7 @@ if __name__ == '__main__':
 
     # attack
     parser.add_argument('--attack-name', type=str, default='FGSM', help='')
-    parser.add_argument('--attack-eps', type=float, default=0.01, help='')
+    parser.add_argument('--attack-eps', type=float, default=0.05, help='')
     parser.add_argument('--attack-step', type=int, default=20, help='')
 
     # adv train options
