@@ -29,7 +29,7 @@ class TaskNet(Model):
             self.bias_transformation = torch.nn.Parameter(
                 torch.zeros(bias_transformation_size))
 
-        print ([input_size], hidden_sizes, [output_size])
+        # print ([input_size], hidden_sizes, [output_size])
         layer_sizes = [input_size] + hidden_sizes + [output_size]
         for i in range(1, self.num_layers):
             self.add_module(
@@ -43,6 +43,9 @@ class TaskNet(Model):
             'output_linear',
             torch.nn.Linear(layer_sizes[self.num_layers - 1],
                             layer_sizes[self.num_layers]))
+        self.add_module(
+            'output_softmax',
+            torch.nn.Softmax())
         self.apply(weight_init)
 
     def forward(self, task_emb, params=None, training=True):
@@ -67,5 +70,7 @@ class TaskNet(Model):
                                  running_var=module.running_var,
                                  training=training)
                 x = self.nonlinearity(x)
+            if 'softmax' in key:
+                x = F.softmax(x)
         return x
 
