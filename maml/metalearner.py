@@ -10,6 +10,7 @@ import copy
 from collections import OrderedDict
 
 import random
+from maml.models.task_net import TaskNet
 
 def get_grad_norm(parameters, norm_type=2):
     if isinstance(parameters, torch.Tensor):
@@ -59,15 +60,21 @@ class MetaLearner(object):
         # for new method
         if self._adv_train == 'new':
             attack_params_list = [['FGSM', 0.1, 0],
-                                  ['FGSM', 0.05, 0],
-                                  ['PGD', 0.01, 20],
-                                  ['PGD', 0.03, 10],]
+                                  ['PGD', 0.05, 3],
+                                  ['PGD', 0.01, 15],
+                                  ['PGD', 0.03, 8],]
             self._adversary_list = []
             # generate adversaries for new method
             for att in attack_params_list:
                 adversary_for_new = self.get_adversary(self._model, att)
                 self._adversary_list.append(adversary_for_new)
             self._do_inner_adv_train = False
+
+            self._task_net = TaskNet( input_size=self._embedding_model._embedding_dims[0],
+                                      output_size=len(self._adversary_list),
+                                      hidden_sizes=(64,32), disable_norm=True )
+            self._task_net.cuda()
+            self._task_net_optim = torch.optim.Adam(list(self._task_net.parameters()), lr=0.001)
 
     def get_adversary(self, model, attack_params):
         if attack_params == None:
@@ -233,6 +240,8 @@ class MetaLearner(object):
 
             if self._embedding_model:
                 embeddings = self._embedding_model(task)
+                # print (embeddings)
+                # print (embeddings[0].shape)
             for i in range(self._num_updates):
                 preds = self._model(task, params=params, embeddings=embeddings)
                 loss = self._loss_func(preds, task.y)
@@ -263,6 +272,26 @@ class MetaLearner(object):
             if self._adv_train == 'ADML' or (self._adv_train == 'new' and self._do_inner_adv_train):
             # for new method store attack #0 params
                 adv_adapted_params.append(adv_params)
+            if self._adv_train == 'new' and self._do_inner_adv_train:
+            # update parameters of TaskNet
+                task_emb = embeddings[0].detach()
+                task_out = self._task_net.forward(task_emb)
+                # print (task_out.shape)
+                out = torch.cat((task_out[:, random_idx_pair[0]],task_out[:, random_idx_pair[1]]), 0).unsqueeze(0)
+                label_0 = 1 if adv_loss < loss else 0
+                ground_truth = torch.LongTensor([1-label_0]).cuda()
+                # print (random_idx_pair, task_out, out, ground_truth)
+                # ground_truth = torch.FloatTensor([0, ] * self._embedding_model._embedding_dims)
+                # ground_truth[random_idx_pair[0]] = label_0
+                # ground_truth[random_idx_pair[1]] = 1 - label_0
+                cri = torch.nn.CrossEntropyLoss()
+                task_net_loss = cri(out, ground_truth)
+                # backward
+                # print (self._task_net.state_dict()['layer1_linear.bias'])
+                self._task_net_optim.zero_grad()
+                task_net_loss.backward()
+                self._task_net_optim.step()
+                # print (self._task_net.state_dict()['layer1_linear.bias'])
             embeddings_list.append(embeddings)
 
         measurements = self._pop_measurements()

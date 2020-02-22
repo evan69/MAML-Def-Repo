@@ -684,7 +684,7 @@ if __name__ == '__main__':
     if args.maml_model is True:
         print('Use vanilla MAML')
         args.model_type = 'conv'
-        args.embedding_type = ''
+        args.embedding_type = 'ConvGRU'
 
     # Device
     args.device = torch.device(args.device
