@@ -342,10 +342,10 @@ class MetaLearner(object):
                 # pass # TODO
                 if self._do_inner_adv_train:
                     att0_preds = self._model(adv_task, params=adv_adapted_params, embeddings=embeddings)
-                    att0_loss = self._loss_func(att1_preds, adv_task.y)
+                    att0_loss = self._loss_func(att0_preds, adv_task.y)
                     # update parameters of TaskNet
                     task_out = self._task_net.forward(self._task_emb_list[index])
-                    out = torch.cat((task_out[:, self._random_idx_pair[index][0]],task_out[:, self._random_idx_pair[index][1]]), 0).unsqueeze(0)
+                    out = torch.cat((task_out[:, self._random_idx_pair_list[index][0]],task_out[:, self._random_idx_pair_list[index][1]]), 0).unsqueeze(0)
                     label_0 = 1 if att0_loss < adv_loss else 0
                     ground_truth = torch.LongTensor([1-label_0]).cuda()
                     cri = torch.nn.CrossEntropyLoss()
