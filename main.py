@@ -477,6 +477,8 @@ def main(args):
             task_net.to(args.device)
             task_net_optim.load_state_dict(checkpoint['tn_optimizer'])
             optimizer_to_device(task_net_optim, args.device)
+            if not is_training:
+                task_net.eval()
 
     # generate attack param
     # attack_params = ['FGSM', 0.1, 20]
@@ -668,7 +670,7 @@ if __name__ == '__main__':
 
     # attack
     parser.add_argument('--attack-name', type=str, default='FGSM', help='')
-    parser.add_argument('--attack-eps', type=float, default=0.05, help='')
+    parser.add_argument('--attack-eps', type=float, default=0.1, help='')
     parser.add_argument('--attack-step', type=int, default=20, help='')
 
     # adv train options
@@ -705,7 +707,9 @@ if __name__ == '__main__':
     if args.maml_model is True:
         print('Use vanilla MAML')
         args.model_type = 'conv'
-        args.embedding_type = 'ConvGRU'
+        args.embedding_type = ''
+        if args.adv_train == 'new':
+            args.embedding_type = 'ConvGRU'
 
     # Device
     args.device = torch.device(args.device

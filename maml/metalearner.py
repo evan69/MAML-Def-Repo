@@ -13,6 +13,15 @@ from collections import OrderedDict
 import random
 from maml.models.task_net import TaskNet
 
+def random_pick(some_list, probabilities):
+    x = random.uniform(0,1)
+    cumulative_probability = 0.0
+    for item,item_probability in zip(some_list,probabilities):
+        cumulative_probability += item_probability
+        if x < cumulative_probability:
+            break
+    return item
+
 def get_grad_norm(parameters, norm_type=2):
     if isinstance(parameters, torch.Tensor):
         parameters = [parameters]
@@ -215,7 +224,7 @@ class MetaLearner(object):
 
         return params
 
-    def adapt(self, train_tasks):
+    def adapt(self, train_tasks, is_training):
         adapted_params = []
 
         if self._adv_train == 'ADML' or self._adv_train == 'new':
@@ -223,6 +232,8 @@ class MetaLearner(object):
         if self._adv_train == 'new':
             # decide whether do inner adv train
             self._do_inner_adv_train = (random.random() < 0.1)
+            if not is_training:
+                self._do_inner_adv_train = True
             random_idxs_list = [] # list that stores pair of attak ids for each task
             task_emb_list = []
             random_idx_pair_list = []
@@ -232,6 +243,11 @@ class MetaLearner(object):
         for task in train_tasks:
             params = self._model.param_dict
             embeddings = None
+
+            if self._embedding_model:
+                embeddings = self._embedding_model(task)
+                # print (embeddings)
+                # print (embeddings[0].shape)
 
             # prepare adv tasks for ADML and new
             if self._adv_train == 'ADML': # generate adv task for ADML train
@@ -248,11 +264,14 @@ class MetaLearner(object):
                     adversary = self._adversary_list[idx]
                     adv_task = self.gen_adv_task(task,adversary)
                     adv_task_list.append(adv_task)
+                if not is_training:
+                    task_out = self._task_net.forward(embeddings[0].detach())
+                    probs = task_out.detach().cpu().numpy()[0]
+                    # print (probs)
+                    choose = random_pick(range(4), probs)
+                    print (probs, choose)
+                    adv_task_list[1] = self.gen_adv_task(task, self._adversary_list[choose])
 
-            if self._embedding_model:
-                embeddings = self._embedding_model(task)
-                # print (embeddings)
-                # print (embeddings[0].shape)
             for i in range(self._num_updates):
                 preds = self._model(task, params=params, embeddings=embeddings)
                 loss = self._loss_func(preds, task.y)
@@ -261,13 +280,13 @@ class MetaLearner(object):
                     adv_task = adv_task_list[0]
                     adv_preds = self._model(adv_task, params=adv_params, embeddings=embeddings)
                     adv_loss = self._loss_func(adv_preds, adv_task.y)
-                    adv_loss = loss + 0.2 * adv_loss
+                    adv_loss = 1.0 * loss + 1.0 * adv_loss
 
                     # attack #1 store in loss
                     adv_task = adv_task_list[1]
                     adv_preds = self._model(adv_task, params=params, embeddings=embeddings)
                     adv_loss = self._loss_func(adv_preds, adv_task.y)
-                    loss = loss + 0.2 * adv_loss
+                    loss = 1.0 * loss + 1.0 * adv_loss
 
                     # calculate params for attack #0 in adv_loss
                     adv_params = self.update_params(adv_loss, params=adv_params)
@@ -401,8 +420,6 @@ class MetaLearner(object):
         state = {
             'model_state_dict': self._model.state_dict(),
             'optimizers': [ optimizer.state_dict() for optimizer in self._optimizers ],
-            'tn_state_dict': self._task_net.state_dict(),
-            'tn_optimizer': self._task_net_optim.state_dict()
         }
         if self._embedding_model:
             state.update(

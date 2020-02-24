@@ -41,7 +41,7 @@ class Trainer(object):
                     torch.save(self._meta_learner.state_dict(), f)
 
             (pre_train_measurements, adapted_params, embeddings
-                ) = self._meta_learner.adapt(train_tasks)
+                ) = self._meta_learner.adapt(train_tasks, is_training)
             post_val_measurements = self._meta_learner.step(
                 adapted_params, embeddings, val_tasks, is_training)
 
