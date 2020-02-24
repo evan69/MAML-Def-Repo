@@ -24,6 +24,7 @@ from maml.metalearner import MetaLearner
 from maml.trainer import Trainer
 from maml.utils import optimizer_to_device, get_git_revision_hash
 
+from maml.models.task_net import TaskNet
 
 def main(args):
     is_training = not args.eval
@@ -439,6 +440,20 @@ def main(args):
     else:
       optimizers = ( torch.optim.Adam(model_parameters, lr=args.slow_lr), )
 
+    task_net = None
+    task_net_optim = None
+    # task net
+    if args.adv_train == 'new':
+       task_net = TaskNet( input_size=embedding_model._embedding_dims[0],
+                                 # output_size=len(self._adversary_list),
+                                 output_size=4,
+                                 hidden_sizes=(64,32), disable_norm=True )
+       # self._task_net.cuda()
+       task_net.to(args.device)
+       task_net_optim = torch.optim.Adam(list(task_net.parameters()), lr=0.001)
+       optimizer_to_device(task_net_optim, args.device)
+
+
     if args.checkpoint != '':
         checkpoint = torch.load(args.checkpoint)
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -457,6 +472,12 @@ def main(args):
             optimizers[1].load_state_dict(checkpoint['optimizers'][1])
             optimizer_to_device(optimizers[1], args.device)
 
+        if args.adv_train == 'new':
+            task_net.load_state_dict(checkpoint['tn_state_dict'])
+            task_net.to(args.device)
+            task_net_optim.load_state_dict(checkpoint['tn_optimizer'])
+            optimizer_to_device(task_net_optim, args.device)
+
     # generate attack param
     # attack_params = ['FGSM', 0.1, 20]
     attack_params = [args.attack_name, args.attack_eps, args.attack_step]
@@ -473,7 +494,7 @@ def main(args):
         collect_accuracies=collect_accuracies, device=args.device,
         alternating=args.alternating, embedding_schedule=args.embedding_schedule,
         classifier_schedule=args.classifier_schedule, embedding_grad_clip=args.embedding_grad_clip,
-        attack_params=attack_params, adv_train=args.adv_train
+        attack_params=attack_params, adv_train=args.adv_train, task_net=task_net, task_net_optim=task_net_optim
     )
 
     trainer = Trainer(

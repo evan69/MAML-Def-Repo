@@ -3,6 +3,7 @@ import numpy as np
 
 from torch.nn.utils.clip_grad import clip_grad_norm_
 from maml.utils import accuracy
+from maml.utils import optimizer_to_device
 
 from advertorch.attacks import GradientSignAttack, LinfPGDAttack, CarliniWagnerL2Attack
 from maml.datasets.metadataset import Task
@@ -30,7 +31,7 @@ class MetaLearner(object):
                  first_order, num_updates, inner_loop_grad_clip,
                  collect_accuracies, device, alternating=False,
                  embedding_schedule=10, classifier_schedule=10,
-                 embedding_grad_clip=0, attack_params=None, adv_train='none'):
+                 embedding_grad_clip=0, attack_params=None, adv_train='none', task_net=None, task_net_optim=None):
         self._model = model
         self._embedding_model = embedding_model
         self._fast_lr = fast_lr
@@ -70,12 +71,19 @@ class MetaLearner(object):
                 self._adversary_list.append(adversary_for_new)
             self._do_inner_adv_train = False
 
+            assert task_net != None and task_net_optim != None
+            self._task_net = task_net
+            self._task_net_optim = task_net_optim
+
+            '''
             self._task_net = TaskNet( input_size=self._embedding_model._embedding_dims[0],
                                       output_size=len(self._adversary_list),
                                       hidden_sizes=(64,32), disable_norm=True )
             # self._task_net.cuda()
             self._task_net.to(device)
             self._task_net_optim = torch.optim.Adam(list(self._task_net.parameters()), lr=0.001)
+            optimizer_to_device(self._task_net_optim, device)
+            '''
 
     def get_adversary(self, model, attack_params):
         if attack_params == None:
@@ -344,12 +352,14 @@ class MetaLearner(object):
                     att0_preds = self._model(adv_task, params=adv_adapted_params, embeddings=embeddings)
                     att0_loss = self._loss_func(att0_preds, adv_task.y)
                     # update parameters of TaskNet
+                    # print (self._task_emb_list[index])
                     task_out = self._task_net.forward(self._task_emb_list[index])
+                    # print (task_out)
                     out = torch.cat((task_out[:, self._random_idx_pair_list[index][0]],task_out[:, self._random_idx_pair_list[index][1]]), 0).unsqueeze(0)
                     label_0 = 1 if att0_loss < adv_loss else 0
                     ground_truth = torch.LongTensor([1-label_0]).cuda()
                     cri = torch.nn.CrossEntropyLoss()
-                    task_net_loss = cri(out, ground_truth)
+                    task_net_loss = cri(out.cuda(), ground_truth.cuda())
                     # backward
                     self._task_net_optim.zero_grad()
                     task_net_loss.backward()
@@ -390,10 +400,19 @@ class MetaLearner(object):
     def state_dict(self):
         state = {
             'model_state_dict': self._model.state_dict(),
-            'optimizers': [ optimizer.state_dict() for optimizer in self._optimizers ]
+            'optimizers': [ optimizer.state_dict() for optimizer in self._optimizers ],
+            'tn_state_dict': self._task_net.state_dict(),
+            'tn_optimizer': self._task_net_optim.state_dict()
         }
         if self._embedding_model:
             state.update(
                 {'embedding_model_state_dict':
                     self._embedding_model.state_dict()})
+        if self._adv_train == 'new':
+            state.update(
+                {'tn_state_dict':
+                    self._task_net.state_dict()})
+            state.update(
+                {'tn_optimizer':
+                    self._task_net_optim.state_dict()})
         return state
