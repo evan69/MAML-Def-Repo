@@ -442,6 +442,7 @@ def main(args):
 
     task_net = None
     task_net_optim = None
+    '''
     # task net
     if args.adv_train == 'new':
        task_net = TaskNet( input_size=embedding_model._embedding_dims[0],
@@ -452,7 +453,8 @@ def main(args):
        task_net.to(args.device)
        task_net_optim = torch.optim.Adam(list(task_net.parameters()), lr=0.001)
        optimizer_to_device(task_net_optim, args.device)
-
+       optimizers = optimizers[:1]
+    '''
 
     if args.checkpoint != '':
         checkpoint = torch.load(args.checkpoint)
@@ -708,8 +710,8 @@ if __name__ == '__main__':
         print('Use vanilla MAML')
         args.model_type = 'conv'
         args.embedding_type = ''
-        if args.adv_train == 'new':
-            args.embedding_type = 'ConvGRU'
+        # if args.adv_train == 'new':
+        #     args.embedding_type = 'ConvGRU'
 
     # Device
     args.device = torch.device(args.device

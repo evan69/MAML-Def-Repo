@@ -68,6 +68,7 @@ class MetaLearner(object):
         # self._attack_model = copy.deepcopy(self._model)
 
         # for new method
+        '''
         if self._adv_train == 'new':
             attack_params_list = [['FGSM', 0.1, 0],
                                   ['PGD', 0.05, 3],
@@ -84,15 +85,9 @@ class MetaLearner(object):
             self._task_net = task_net
             self._task_net_optim = task_net_optim
 
-            '''
-            self._task_net = TaskNet( input_size=self._embedding_model._embedding_dims[0],
-                                      output_size=len(self._adversary_list),
-                                      hidden_sizes=(64,32), disable_norm=True )
-            # self._task_net.cuda()
-            self._task_net.to(device)
-            self._task_net_optim = torch.optim.Adam(list(self._task_net.parameters()), lr=0.001)
-            optimizer_to_device(self._task_net_optim, device)
-            '''
+            self._embedding_model = None
+            self._new_emb_model = None # load from mmaml here
+        '''
 
     def get_adversary(self, model, attack_params):
         if attack_params == None:
@@ -110,11 +105,8 @@ class MetaLearner(object):
         else:
             assert False
         return adversary
-        # self._adversary = adversary
 
     def gen_adv_task(self, task, adversary):
-        # self.set_adversary(self._model)
-        # adv_task = Task()
         copy_task = copy.deepcopy(task)
         adv_x = adversary.perturb(copy_task.x, copy_task.y)
         adv_task = Task(adv_x, copy_task.y, 'adv_task')
@@ -229,14 +221,6 @@ class MetaLearner(object):
 
         if self._adv_train == 'ADML' or self._adv_train == 'new':
             adv_adapted_params = [] # an extra space for adv params
-        if self._adv_train == 'new':
-            # decide whether do inner adv train
-            self._do_inner_adv_train = (random.random() < 0.1)
-            if not is_training:
-                self._do_inner_adv_train = True
-            random_idxs_list = [] # list that stores pair of attak ids for each task
-            task_emb_list = []
-            random_idx_pair_list = []
 
         embeddings_list = []
 
@@ -246,50 +230,23 @@ class MetaLearner(object):
 
             if self._embedding_model:
                 embeddings = self._embedding_model(task)
-                # print (embeddings)
-                # print (embeddings[0].shape)
 
             # prepare adv tasks for ADML and new
             if self._adv_train == 'ADML': # generate adv task for ADML train
                 adv_params = copy.deepcopy(params)
                 self._model.update_tmp_params(None) # attack current theta
                 adv_task = self.gen_adv_task(task, self._adversary)
-            elif self._adv_train == 'new' and self._do_inner_adv_train: # generate adv task list for new method
-                adv_params = copy.deepcopy(params) # generate init params for attack #0
-                self._model.update_tmp_params(None) # attack current theta for adv train
-                adv_task_list = []
-                random_idx_pair = random.sample(range(len(self._adversary_list)), 2)
-                # for adversary in self._adversary_list[:2]: # extract 2 attacks
-                for idx in random_idx_pair:
-                    adversary = self._adversary_list[idx]
-                    adv_task = self.gen_adv_task(task,adversary)
-                    adv_task_list.append(adv_task)
-                if not is_training:
-                    task_out = self._task_net.forward(embeddings[0].detach())
-                    probs = task_out.detach().cpu().numpy()[0]
-                    # print (probs)
-                    choose = random_pick(range(4), probs)
-                    print (probs, choose)
-                    adv_task_list[1] = self.gen_adv_task(task, self._adversary_list[choose])
+            if self._adv_train == 'new': # new method: reconstruct loss
+                self._model.update_tmp_params(None)
+                adv_task = self.gen_adv_task(task, self._adversary) # generate adv task data
 
             for i in range(self._num_updates):
                 preds = self._model(task, params=params, embeddings=embeddings)
                 loss = self._loss_func(preds, task.y)
-                if self._adv_train == 'new' and self._do_inner_adv_train: # TODO: bug here: should do adv train for each adv task
-                    # attack #0 store in adv_loss
-                    adv_task = adv_task_list[0]
-                    adv_preds = self._model(adv_task, params=adv_params, embeddings=embeddings)
-                    adv_loss = self._loss_func(adv_preds, adv_task.y)
-                    adv_loss = 1.0 * loss + 1.0 * adv_loss
-
-                    # attack #1 store in loss
-                    adv_task = adv_task_list[1]
+                if self._adv_train == 'new': # new method: reconstruct loss
                     adv_preds = self._model(adv_task, params=params, embeddings=embeddings)
                     adv_loss = self._loss_func(adv_preds, adv_task.y)
                     loss = 1.0 * loss + 1.0 * adv_loss
-
-                    # calculate params for attack #0 in adv_loss
-                    adv_params = self.update_params(adv_loss, params=adv_params)
                 params = self.update_params(loss, params=params)
                 if i == 0:
                     self._update_measurements(task, loss, preds)
@@ -299,25 +256,14 @@ class MetaLearner(object):
                     adv_loss = self._loss_func(adv_preds, adv_task.y)
                     adv_params = self.update_params(adv_loss, params=adv_params)
             adapted_params.append(params)
-            if self._adv_train == 'ADML' or (self._adv_train == 'new' and self._do_inner_adv_train):
+            if self._adv_train == 'ADML':# or (self._adv_train == 'new' and self._do_inner_adv_train):
             # for new method store attack #0 params
                 adv_adapted_params.append(adv_params)
-            if self._adv_train == 'new' and self._do_inner_adv_train:
-            # update parameters of TaskNet
-                task_emb = embeddings[0].detach()
-                task_emb_list.append(task_emb)
-                random_idx_pair_list.append(random_idx_pair)
-                # removed
             embeddings_list.append(embeddings)
 
         measurements = self._pop_measurements()
         if self._adv_train == 'ADML':
-            # return measurements, [adapted_params, adv_adapted_params], embeddings_list
             self._adv_adapted_params = adv_adapted_params
-        if self._adv_train == 'new' and self._do_inner_adv_train:
-            self._adv_adapted_params = adv_adapted_params
-            self._task_emb_list = task_emb_list
-            self._random_idx_pair_list = random_idx_pair_list
         return measurements, adapted_params, embeddings_list
 
     def step(self, adapted_params_list, embeddings_list, val_tasks,
@@ -328,10 +274,8 @@ class MetaLearner(object):
 
         for index, (adapted_params, embeddings, task) in enumerate(zip(
                 adapted_params_list, embeddings_list, val_tasks)):
-            if self._adv_train == 'ADML' or (self._adv_train == 'new' and self._do_inner_adv_train):
+            if self._adv_train == 'ADML':
                 adv_adapted_params = self._adv_adapted_params[index]
-                # adv_adapted_params = adapted_params[1]
-                # adapted_params = adapted_params[0]
             if self._attack_params != None:
                 from collections import OrderedDict
                 tmp = OrderedDict()
@@ -348,8 +292,6 @@ class MetaLearner(object):
             preds = self._model(task, params=adapted_params,
                                 embeddings=embeddings)
             loss = self._loss_func(preds, task.y)
-            # post_update_losses.append(loss)
-            # self._update_measurements(task, loss, preds)
 
             if adv_task != None:
                 adv_preds = self._model(adv_task, params=adapted_params, embeddings=embeddings)
@@ -360,29 +302,11 @@ class MetaLearner(object):
             if self._adv_train == 'AdvQ':
                 loss = adv_loss
             elif self._adv_train == 'ADML':
-            # bug here - fixed
                 ThetaC_DA_loss = adv_loss
                 ac_preds = self._model(task, params=adv_adapted_params, embeddings=embeddings)
                 ThetaA_DC_loss = self._loss_func(adv_preds, adv_task.y)
                 loss = ThetaC_DA_loss + ThetaA_DC_loss
             elif self._adv_train == 'new':
-                # pass # TODO
-                if self._do_inner_adv_train:
-                    att0_preds = self._model(adv_task, params=adv_adapted_params, embeddings=embeddings)
-                    att0_loss = self._loss_func(att0_preds, adv_task.y)
-                    # update parameters of TaskNet
-                    # print (self._task_emb_list[index])
-                    task_out = self._task_net.forward(self._task_emb_list[index])
-                    # print (task_out)
-                    out = torch.cat((task_out[:, self._random_idx_pair_list[index][0]],task_out[:, self._random_idx_pair_list[index][1]]), 0).unsqueeze(0)
-                    label_0 = 1 if att0_loss < adv_loss else 0
-                    ground_truth = torch.LongTensor([1-label_0]).cuda()
-                    cri = torch.nn.CrossEntropyLoss()
-                    task_net_loss = cri(out.cuda(), ground_truth.cuda())
-                    # backward
-                    self._task_net_optim.zero_grad()
-                    task_net_loss.backward()
-                    self._task_net_optim.step()
                 loss = adv_loss
                 # same as AdvQ
             post_update_losses.append(loss)
@@ -425,6 +349,7 @@ class MetaLearner(object):
             state.update(
                 {'embedding_model_state_dict':
                     self._embedding_model.state_dict()})
+        '''
         if self._adv_train == 'new':
             state.update(
                 {'tn_state_dict':
@@ -432,4 +357,5 @@ class MetaLearner(object):
             state.update(
                 {'tn_optimizer':
                     self._task_net_optim.state_dict()})
+        '''
         return state
