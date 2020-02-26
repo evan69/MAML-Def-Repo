@@ -442,7 +442,6 @@ def main(args):
 
     task_net = None
     task_net_optim = None
-    '''
     # task net
     if args.adv_train == 'new':
        task_net = TaskNet( input_size=embedding_model._embedding_dims[0],
@@ -454,7 +453,13 @@ def main(args):
        task_net_optim = torch.optim.Adam(list(task_net.parameters()), lr=0.001)
        optimizer_to_device(task_net_optim, args.device)
        optimizers = optimizers[:1]
-    '''
+
+       if embedding_model:
+            checkpoint = torch.load('../MMAML-Classification/train_dir/maml_5w1s_omniglot_emb/maml_gatedconv_50000.pt')
+            embedding_model.load_state_dict(
+                checkpoint['embedding_model_state_dict'])
+            # optimizers[1].load_state_dict(checkpoint['optimizers'][1])
+            # optimizer_to_device(optimizers[1], args.device)
 
     if args.checkpoint != '':
         checkpoint = torch.load(args.checkpoint)
@@ -711,8 +716,8 @@ if __name__ == '__main__':
         print('Use vanilla MAML')
         args.model_type = 'conv'
         args.embedding_type = ''
-        # if args.adv_train == 'new':
-        #     args.embedding_type = 'ConvGRU'
+        if args.adv_train == 'new':
+            args.embedding_type = 'ConvGRU'
 
     # Device
     args.device = torch.device(args.device
