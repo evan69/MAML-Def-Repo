@@ -473,7 +473,7 @@ def main(args):
                 checkpoint['embedding_model_state_dict'])
             optimizers[1].load_state_dict(checkpoint['optimizers'][1])
             optimizer_to_device(optimizers[1], args.device)
-
+        '''
         if args.adv_train == 'new':
             task_net.load_state_dict(checkpoint['tn_state_dict'])
             task_net.to(args.device)
@@ -481,6 +481,7 @@ def main(args):
             optimizer_to_device(task_net_optim, args.device)
             if not is_training:
                 task_net.eval()
+        '''
 
     # generate attack param
     # attack_params = ['FGSM', 0.1, 20]
@@ -671,9 +672,9 @@ if __name__ == '__main__':
         help='')
 
     # attack
-    parser.add_argument('--attack-name', type=str, default='FGSM', help='')
-    parser.add_argument('--attack-eps', type=float, default=0.1, help='')
-    parser.add_argument('--attack-step', type=int, default=20, help='')
+    parser.add_argument('--attack-name', type=str, default='PGD', help='')
+    parser.add_argument('--attack-eps', type=float, default=0.05, help='')
+    parser.add_argument('--attack-step', type=int, default=10, help='')
 
     # adv train options
     parser.add_argument('--adv-train', type=str, default='none', help='')

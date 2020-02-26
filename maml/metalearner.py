@@ -69,8 +69,8 @@ class MetaLearner(object):
 
         # for new method
         if self._adv_train == 'new':
-            attack_params_list = [['FGSM', 0.1, 0],
-                                  ['PGD', 0.05, 3],
+            attack_params_list = [['PGD', 0.05, 10],
+                                  ['FGSM', 0.1, 0],
                                   ['PGD', 0.01, 15],
                                   ['PGD', 0.03, 8],]
             self._adversary_list = []
@@ -86,7 +86,6 @@ class MetaLearner(object):
 
             self._embedding_model = None
             self._new_emb_model = None # load from mmaml here
-
 
     def get_adversary(self, model, attack_params):
         if attack_params == None:
@@ -221,7 +220,7 @@ class MetaLearner(object):
         if self._adv_train == 'ADML': # or self._adv_train == 'new':
             adv_adapted_params = [] # an extra space for adv params
         elif self._adv_train == 'new':
-            self._do_inner_adv_train = (random.random() < 0.3)
+            self._do_inner_adv_train = True #(random.random() < 0.3)
             adapted_params_v2 = []
             task_emb_list = []
             adv_task_list = []
@@ -245,7 +244,8 @@ class MetaLearner(object):
             if self._adv_train == 'new': # new method: reconstruct loss
                 self._model.update_tmp_params(None)
                 adv_task = self.gen_adv_task(task, self._adversary_list[random_idx_pair[0]]) # generate adv task data
-                if is_training:
+                # if is_training:
+                if False:
                     # adv_task_v2 = self.gen_adv_task(task, self._adversary)
                     adv_task_v2 = self.gen_adv_task(task, self._adversary_list[random_idx_pair[1]])
                     params_v2 = copy.deepcopy(params)
@@ -258,7 +258,8 @@ class MetaLearner(object):
                     adv_preds = self._model(adv_task, params=params, embeddings=embeddings)
                     adv_loss = self._loss_func(adv_preds, adv_task.y)
                     loss = 1.0 * loss + 1.0 * adv_loss
-                    if is_training:
+                    # if is_training:
+                    if False:
                         preds_v2 = self._model(task, params=params_v2, embeddings=embeddings)
                         loss_v2 = self._loss_func(preds_v2, task.y)
                         adv_preds_v2 = self._model(adv_task_v2, params=params_v2, embeddings=embeddings)
@@ -279,8 +280,8 @@ class MetaLearner(object):
             if self._adv_train == 'ADML':# or (self._adv_train == 'new' and self._do_inner_adv_train):
             # for new method store attack #0 params
                 adv_adapted_params.append(adv_params)
-            elif self._adv_train == 'new' and self._do_inner_adv_train:
-                adapted_params_v2.append(params_v2)
+            # elif self._adv_train == 'new' and self._do_inner_adv_train and is_training:
+            #     adapted_params_v2.append(params_v2)
             embeddings_list.append(embeddings)
 
         measurements = self._pop_measurements()
