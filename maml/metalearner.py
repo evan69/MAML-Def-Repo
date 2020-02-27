@@ -66,6 +66,8 @@ class MetaLearner(object):
 
         self._adversary = self.get_adversary(self._model, attack_params=attack_params)
         # self._attack_model = copy.deepcopy(self._model)
+        self._task_net = task_net
+        self._task_net_optim = task_net_optim
 
         # for new method
         if self._adv_train == 'new':
@@ -81,11 +83,12 @@ class MetaLearner(object):
             self._do_inner_adv_train = False
 
             # assert task_net != None and task_net_optim != None
-            self._task_net = task_net
-            self._task_net_optim = task_net_optim
+            # self._task_net = task_net
+            # self._task_net_optim = task_net_optim
 
             self._embedding_model = None
-            self._new_emb_model = None # load from mmaml here
+            self._new_emb_model = embedding_model # load from mmaml here
+            self._new_emb_model.eval()
 
     def get_adversary(self, model, attack_params):
         if attack_params == None:
@@ -244,8 +247,16 @@ class MetaLearner(object):
                 adv_task = self.gen_adv_task(task, self._adversary)
             if self._adv_train == 'new': # new method: reconstruct loss
                 self._model.update_tmp_params(None)
-                random_idx = 0
+                random_idx = random.randint(0, len(self._adversary_list)-1)
+                if not is_training:
+                # choose idx makes prob max(TODO)
+                    task_emb = self._new_emb_model(task)[0].detach()
+                    out = self._task_net.forward(task_emb).detach().cpu().numpy()[0]
+                    # print (task_emb, out)
+                    random_idx = random_pick(range(len(self._adversary_list)), out)
+                    # print ('out:', out, ' choose:', random_idx)
                 adv_task = self.gen_adv_task(task, self._adversary_list[random_idx]) # generate adv task data
+                # random_idx = 0
                 random_idx_list.append(random_idx)
 
             for i in range(self._num_updates):
@@ -267,13 +278,17 @@ class MetaLearner(object):
             adapted_params.append(params)
             if self._adv_train == 'ADML':# or (self._adv_train == 'new' and self._do_inner_adv_train):
                 adv_adapted_params.append(adv_params)
+            elif self._adv_train == 'new' and is_training:
+                # print (self._new_emb_model(task)[0])
+                task_emb_list.append(self._new_emb_model(task)[0].detach())
             embeddings_list.append(embeddings)
 
         measurements = self._pop_measurements()
         if self._adv_train == 'ADML':
             self._adv_adapted_params = adv_adapted_params
-        elif self._adv_train == 'new':
+        elif self._adv_train == 'new' and is_training:
             self._random_idx_list = random_idx_list
+            self._task_emb_list = task_emb_list
         return measurements, adapted_params, embeddings_list
 
     def step(self, adapted_params_list, embeddings_list, val_tasks,
@@ -281,6 +296,7 @@ class MetaLearner(object):
         for optimizer in self._optimizers:
             optimizer.zero_grad()
         post_update_losses = []
+        origin_losses = []
 
         for index, (adapted_params, embeddings, task) in enumerate(zip(
                 adapted_params_list, embeddings_list, val_tasks)):
@@ -317,9 +333,28 @@ class MetaLearner(object):
                 ThetaA_DC_loss = self._loss_func(adv_preds, adv_task.y)
                 loss = ThetaC_DA_loss + ThetaA_DC_loss
             elif self._adv_train == 'new':
+                if is_training:
+                    origin_losses.append(loss.detach())
+                    # record origin loss
                 loss = adv_loss
                 # same as AdvQ
             post_update_losses.append(loss)
+
+        if self._adv_train == 'new' and is_training:
+            loss_rate_list = [(post_update_losses[i].detach() - origin_losses[i], i, self._random_idx_list[i]) for i in range(len(origin_losses))]
+            loss_rate_list.sort()
+
+            clip_num = int(0.3 * len(loss_rate_list))
+            for item in loss_rate_list[:clip_num]:
+                task_out = self._task_net.forward(self._task_emb_list[item[1]])
+                # print (item[0], item[1], item[2], task_out)
+                ground_truth = torch.LongTensor([item[2]]).cuda()
+                cri = torch.nn.CrossEntropyLoss()
+                task_net_loss = cri(task_out.cuda(), ground_truth.cuda())
+                # backward
+                self._task_net_optim.zero_grad()
+                task_net_loss.backward()
+                self._task_net_optim.step()
 
         mean_loss = torch.mean(torch.stack(post_update_losses))
         if is_training:
@@ -359,7 +394,7 @@ class MetaLearner(object):
             state.update(
                 {'embedding_model_state_dict':
                     self._embedding_model.state_dict()})
-        '''
+
         if self._adv_train == 'new':
             state.update(
                 {'tn_state_dict':
@@ -367,5 +402,5 @@ class MetaLearner(object):
             state.update(
                 {'tn_optimizer':
                     self._task_net_optim.state_dict()})
-        '''
+
         return state

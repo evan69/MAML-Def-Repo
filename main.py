@@ -458,6 +458,7 @@ def main(args):
             checkpoint = torch.load('../MMAML-Classification/train_dir/maml_5w1s_omniglot_emb/maml_gatedconv_50000.pt')
             embedding_model.load_state_dict(
                 checkpoint['embedding_model_state_dict'])
+            print ('load embedding model')
             # optimizers[1].load_state_dict(checkpoint['optimizers'][1])
             # optimizer_to_device(optimizers[1], args.device)
 
@@ -473,12 +474,13 @@ def main(args):
           optimizers[0].load_state_dict(checkpoint['optimizers'][0])
           optimizer_to_device(optimizers[0], args.device)
 
-          if embedding_model:
+          if embedding_model and args.adv_train != 'new':
+          # if False:
             embedding_model.load_state_dict(
                 checkpoint['embedding_model_state_dict'])
             optimizers[1].load_state_dict(checkpoint['optimizers'][1])
             optimizer_to_device(optimizers[1], args.device)
-        '''
+
         if args.adv_train == 'new':
             task_net.load_state_dict(checkpoint['tn_state_dict'])
             task_net.to(args.device)
@@ -486,7 +488,6 @@ def main(args):
             optimizer_to_device(task_net_optim, args.device)
             if not is_training:
                 task_net.eval()
-        '''
 
     # generate attack param
     # attack_params = ['FGSM', 0.1, 20]
