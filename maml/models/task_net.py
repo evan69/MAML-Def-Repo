@@ -14,7 +14,7 @@ def weight_init(module):
 
 class TaskNet(Model):
     def __init__(self, input_size, output_size, hidden_sizes=(),
-                 nonlinearity=F.relu, disable_norm=False,
+                 nonlinearity=F.leaky_relu, disable_norm=False,
                  bias_transformation_size=0):
         super(TaskNet, self).__init__()
         hidden_sizes = list(hidden_sizes)
