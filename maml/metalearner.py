@@ -6,6 +6,9 @@ from maml.utils import accuracy
 from maml.utils import optimizer_to_device
 
 from advertorch.attacks import GradientSignAttack, LinfPGDAttack, CarliniWagnerL2Attack
+from advertorch.attacks import L2BasicIterativeAttack, MomentumIterativeAttack, FastFeatureAttack
+from advertorch.attacks import JacobianSaliencyMapAttack, LBFGSAttack
+from advertorch.attacks import SinglePixelAttack, LocalSearchAttack, LinfSPSAAttack
 from maml.datasets.metadataset import Task
 import copy
 from collections import OrderedDict
@@ -71,10 +74,10 @@ class MetaLearner(object):
 
         # for new method
         if self._adv_train == 'new':
-            attack_params_list = [['PGD', 0.05, 10],
-                                  ['FGSM', 0.1, 0],
-                                  ['PGD', 0.01, 15],
-                                  ['PGD', 0.03, 8],]
+            attack_params_list = [['PGD', 0.2, 20],
+                                  ['FGSM', 0.2, 0],
+                                  ['BIA', 0.2, 20],
+                                  ['MIA', 0.2, 20],]
             self._adversary_list = []
             # generate adversaries for new method
             for att in attack_params_list:
@@ -93,6 +96,7 @@ class MetaLearner(object):
     def get_adversary(self, model, attack_params):
         if attack_params == None:
             return
+        # print (attack_params)
         method = attack_params[0]
         eps = attack_params[1]
         model = model.forward_single
@@ -101,8 +105,31 @@ class MetaLearner(object):
         elif method == 'PGD':
             nb_iter = attack_params[2]
             adversary = LinfPGDAttack(model, eps=eps, nb_iter=nb_iter)
+        elif method == 'BIA':
+            nb_iter = attack_params[2]
+            adversary = L2BasicIterativeAttack(model, eps=eps, nb_iter=nb_iter)
+        elif method == 'MIA':
+            nb_iter = attack_params[2]
+            adversary = MomentumIterativeAttack(model, eps=eps, nb_iter=nb_iter)
+        elif method == 'FFA':
+            nb_iter = attack_params[2]
+            adversary = FastFeatureAttack(model, eps=eps, nb_iter=nb_iter)
         elif method == 'CW':
-            adversary = CarliniWagnerL2Attack(model, num_classes=5, max_iterations=10)
+            nb_iter = attack_params[2]
+            adversary = CarliniWagnerL2Attack(model, initial_const=eps, num_classes=5, max_iterations=nb_iter)
+        elif method == 'JSMA':
+            adversary = JacobianSaliencyMapAttack(model, num_classes=5)
+            # slow, only test
+        elif method == 'LBFGS':
+            adversary = LBFGSAttack(model, num_classes=5)
+            # slow
+        elif method == 'SPA':
+            adversary = SinglePixelAttack(model)
+        elif method == 'LSA': # black box
+            adversary = LocalSearchAttack(model)
+            # slow
+        elif method == 'SPSA':
+            adversary = LinfSPSAAttack(model, eps=eps)
         else:
             assert False
         return adversary
