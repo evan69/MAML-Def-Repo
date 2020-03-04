@@ -455,7 +455,15 @@ def main(args):
        optimizers = optimizers[:1]
 
        if embedding_model:
-            checkpoint = torch.load('../MMAML-Classification/train_dir/maml_5w1s_omniglot_emb/maml_gatedconv_50000.pt')
+            # print (args.dataset, args.multimodal_few_shot)
+            if args.dataset == 'omniglot':
+                checkpoint = torch.load('../MMAML-Classification/train_dir/maml_5w1s_omniglot_emb/maml_gatedconv_50000.pt')
+            elif args.dataset == 'miniimagenet':
+                checkpoint = torch.load('../MMAML-Classification/train_dir/maml_5w1s_miniim_emb/maml_gatedconv_50000.pt')
+            elif args.dataset == 'multimodal_few_shot' and 'aircraft' in args.multimodal_few_shot:
+                checkpoint = torch.load('../MMAML-Classification/train_dir/maml_5w5s_aircraft_emb/maml_gatedconv_50000.pt')
+            else:
+                assert False
             embedding_model.load_state_dict(
                 checkpoint['embedding_model_state_dict'])
             print ('load embedding model')
@@ -463,7 +471,7 @@ def main(args):
             # optimizer_to_device(optimizers[1], args.device)
 
     if args.checkpoint != '':
-        checkpoint = torch.load(args.checkpoint)
+        checkpoint = torch.load(args.checkpoint, map_location=args.device)
         model.load_state_dict(checkpoint['model_state_dict'])
         model.to(args.device)
         if not is_training:
