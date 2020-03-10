@@ -457,11 +457,13 @@ def main(args):
        if embedding_model:
             # print (args.dataset, args.multimodal_few_shot)
             if args.dataset == 'omniglot':
-                checkpoint = torch.load('../MMAML-Classification/train_dir/maml_5w1s_omniglot_emb/maml_gatedconv_50000.pt')
-            elif args.dataset == 'miniimagenet':
-                checkpoint = torch.load('../MMAML-Classification/train_dir/maml_5w1s_miniim_emb/maml_gatedconv_50000.pt')
+                checkpoint = torch.load('../MMAML-Classification/train_dir/maml_5w1s_omniglot_emb/maml_gatedconv_50000.pt', map_location=args.device)
+            elif args.dataset == 'miniimagenet' and args.num_samples_per_class == 1:
+                checkpoint = torch.load('../MMAML-Classification/train_dir/maml_5w1s_miniim_emb/maml_gatedconv_50000.pt', map_location=args.device)
+            elif args.dataset == 'miniimagenet' and args.num_samples_per_class == 5:
+                checkpoint = torch.load('../MMAML-Classification/train_dir/maml_5w5s_miniim_emb/maml_gatedconv_50000.pt', map_location=args.device)
             elif args.dataset == 'multimodal_few_shot' and 'aircraft' in args.multimodal_few_shot:
-                checkpoint = torch.load('../MMAML-Classification/train_dir/maml_5w5s_aircraft_emb/maml_gatedconv_50000.pt')
+                checkpoint = torch.load('../MMAML-Classification/train_dir/maml_5w5s_aircraft_emb/maml_gatedconv_50000.pt', map_location=args.device)
             else:
                 assert False
             embedding_model.load_state_dict(
