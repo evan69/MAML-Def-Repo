@@ -443,6 +443,7 @@ def main(args):
     task_net = None
     task_net_optim = None
     # task net
+    '''
     if args.adv_train == 'new':
        task_net = TaskNet( input_size=embedding_model._embedding_dims[0],
                                  # output_size=len(self._adversary_list),
@@ -471,6 +472,7 @@ def main(args):
             print ('load embedding model')
             # optimizers[1].load_state_dict(checkpoint['optimizers'][1])
             # optimizer_to_device(optimizers[1], args.device)
+    '''
 
     if args.checkpoint != '':
         checkpoint = torch.load(args.checkpoint, map_location=args.device)
@@ -491,6 +493,7 @@ def main(args):
             optimizers[1].load_state_dict(checkpoint['optimizers'][1])
             optimizer_to_device(optimizers[1], args.device)
 
+        '''
         if args.adv_train == 'new':
             task_net.load_state_dict(checkpoint['tn_state_dict'])
             task_net.to(args.device)
@@ -498,6 +501,7 @@ def main(args):
             optimizer_to_device(task_net_optim, args.device)
             if not is_training:
                 task_net.eval()
+        '''
 
     # generate attack param
     # attack_params = ['FGSM', 0.1, 20]
@@ -727,8 +731,8 @@ if __name__ == '__main__':
         print('Use vanilla MAML')
         args.model_type = 'conv'
         args.embedding_type = ''
-        if args.adv_train == 'new':
-            args.embedding_type = 'ConvGRU'
+        # if args.adv_train == 'new':
+        #     args.embedding_type = 'ConvGRU'
 
     # Device
     args.device = torch.device(args.device
