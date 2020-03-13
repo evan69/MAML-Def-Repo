@@ -15,6 +15,7 @@ from collections import OrderedDict
 
 import random
 from maml.models.task_net import TaskNet
+import torch.nn as nn
 
 def random_pick(some_list, probabilities):
     x = random.uniform(0,1)
@@ -347,7 +348,34 @@ class MetaLearner(object):
                     origin_losses.append(loss.detach())
                     # record origin loss
                 loss = adv_loss
+            elif self._adv_train == 'AdvQ-rew':
+                # print (preds, task.y)
+                # assert False
+                loss = adv_loss
                 # same as AdvQ
+                reweight = 1.0
+                gamma = 2.0
+                rho = 5.0
+                class_num = int(max(task.y) + 1)
+                batch_size = int(task.y.shape[0])
+                label = torch.LongTensor(batch_size, 1).random_() % class_num
+                label = task.y.cpu().view(batch_size, 1)
+                one_hot = torch.zeros(batch_size, class_num).scatter_(1, label, 1)
+
+                softmax = nn.Softmax()
+
+                preds_cp = softmax(preds.detach().cpu())
+                weight = one_hot * (1-preds_cp) + (1-one_hot) * preds_cp
+                weight = weight ** gamma
+
+                adv_preds_cp = softmax(adv_preds.detach().cpu())
+                adv_weight = one_hot * (1-adv_preds_cp) + (1-one_hot) * adv_preds_cp
+                adv_weight = adv_weight ** gamma
+
+                weight = torch.mean(adv_weight)
+                # print (weight, adv_loss)
+                # weight = 1.0
+                loss = loss * weight
             post_update_losses.append(loss)
 
         '''
