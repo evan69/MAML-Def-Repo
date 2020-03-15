@@ -74,6 +74,38 @@ class MetaLearner(object):
         self._task_net_optim = task_net_optim
 
         # for new method
+        if self._adv_train == 'Curr':
+            # self._max_attack_params = copy.deepcopy(attack_params)
+            # self._incr_step = attack_params[1] / 4
+            # self._attack_params[1] = 0.0
+            # self._adversary = self.get_adversary(self._model, attack_params=self._attack_params) 
+            self._smoothed_list = []
+            self._adv_acc_list = []
+            self._iter_cnt = 0
+            self._query_strength = 0
+            self._attack_params_list = [['PGD', 0.0, 1],
+                                  ['PGD', 0.01, 1],
+                                  ['PGD', 0.02, 3],
+                                  ['PGD', 0.05, 5],
+                                  ['PGD', 0.08, 8],
+                                  ['PGD', 0.1,  12],
+                                  ['PGD', 0.1,  15],
+                                  ['PGD', 0.1,  20],
+                                  # ['PGD', 0.13, 15],
+                                  # ['PGD', 0.18, 18],
+                                  # ['PGD', 0.2,  20],
+                                  # ['PGD', 0.25, 20],
+                                  # ['PGD', 0.3, 20],
+                                  ]
+            self._adversary = self.get_adversary(self._model, attack_params=self._attack_params_list[self._query_strength])
+            self._acc_list = []
+            for item in self._attack_params_list:
+                self._acc_list.append([])
+            self._adversary_list = []
+            # generate adversaries for Curr method
+            for att in self._attack_params_list:
+                adversary_for_new = self.get_adversary(self._model, att)
+                self._adversary_list.append(adversary_for_new)
 
         if self._adv_train == 'new':
             attack_params_list = [['PGD', 0.2, 20],
@@ -253,6 +285,9 @@ class MetaLearner(object):
 
         if self._adv_train == 'ADML':
             adv_adapted_params = [] # an extra space for adv params
+        if self._adv_train == 'Curr':
+            self._random_strength = random.randint(0, len(self._adversary_list) - 1)
+            self._random_strength = 0
 
         embeddings_list = []
 
@@ -273,16 +308,18 @@ class MetaLearner(object):
                 random_idx = random.randint(0, len(self._adversary_list)-1)
                 random_idx = 0
                 adv_task = self.gen_adv_task(task, self._adversary_list[random_idx]) # generate adv task data
+            if self._adv_train == 'Curr':
+                adv_task = self.gen_adv_task(task, self._adversary_list[self._random_strength])
 
             for i in range(self._num_updates):
-                if self._adv_train != 'new':
-                    preds = self._model(task, params=params, embeddings=embeddings)
-                    loss = self._loss_func(preds, task.y)
-                if self._adv_train == 'new': # and self._do_inner_adv_train: # new method: reconstruct loss
+                preds = self._model(task, params=params, embeddings=embeddings)
+                loss = self._loss_func(preds, task.y)
+                if self._adv_train == 'new' or self._adv_train == 'Curr': # and self._do_inner_adv_train: # new method: reconstruct loss
                     adv_preds = self._model(adv_task, params=params, embeddings=embeddings)
                     adv_loss = self._loss_func(adv_preds, adv_task.y)
-                    preds = adv_preds
-                    loss = adv_loss
+                    # preds = adv_preds
+                    loss = loss + 1.0 * adv_loss
+                    # loss = adv_loss
 
                 params = self.update_params(loss, params=params)
                 if i == 0:
@@ -349,8 +386,6 @@ class MetaLearner(object):
                     # record origin loss
                 loss = adv_loss
             elif self._adv_train == 'AdvQ-rew':
-                # print (preds, task.y)
-                # assert False
                 loss = adv_loss
                 # same as AdvQ
                 reweight = 1.0
@@ -373,9 +408,10 @@ class MetaLearner(object):
                 adv_weight = adv_weight ** gamma
 
                 weight = torch.mean(adv_weight)
-                # print (weight, adv_loss)
-                # weight = 1.0
                 loss = loss * weight
+            elif self._adv_train == 'Curr':
+                loss = adv_loss
+                # same as AdvQ
             post_update_losses.append(loss)
 
         '''
@@ -416,6 +452,70 @@ class MetaLearner(object):
                   self._optimizers[1].step()
 
         measurements = self._pop_measurements()
+        if self._adv_train == 'Curr':
+            adv_acc = measurements['adv_accuracy']
+            print ('Current query param', self._attack_params_list[self._query_strength], adv_acc)
+            # adv_acc = measurements['adv_accuracy']
+            # self._acc_list[self._random_strength].append(adv_acc)
+            # print(self._random_strength, np.mean(self._acc_list[self._random_strength]))
+            # for i,item in enumerate(self._acc_list):
+            #     print (i,np.mean(item))
+
+            window_size = 2000
+            smooth_weight = 0.9
+            self._adv_acc_list.append(adv_acc)
+            if len(self._adv_acc_list) == 1:
+                self._smoothed_list.append(adv_acc)
+            else:
+                self._smoothed_list.append(smooth_weight * self._adv_acc_list[-2] + (1 - smooth_weight) * adv_acc)
+
+            self._iter_cnt += 1
+            if len(self._smoothed_list) > window_size and self._iter_cnt > window_size:
+                z = np.polyfit(range(window_size), self._smoothed_list[-window_size:], 1)
+                incr_rate = z[0]
+                print (self._iter_cnt, incr_rate, z)
+                if abs(incr_rate) < 1e-4 or self._iter_cnt > 3 * window_size:
+                # judge whether stable
+                    if self._query_strength < len(self._attack_params_list) - 1:
+                        self._query_strength += 1
+                        print ('Update attack param', self._attack_params_list[self._query_strength])
+                        self._adversary = self.get_adversary(self._model, attack_params=self._attack_params_list[self._query_strength])
+                        # update adversary for query
+                        self._iter_cnt = 0
+                        # update counter
+                    else:
+                        print ('Reach max param', self._attack_params_list[self._query_strength])
+        '''
+        if self._adv_train == 'Curr':
+            smooth_weight = 0.9
+            window_size = 1000
+            # print (self._attack_param)
+            # print (measurements)
+            adv_acc = measurements['adv_accuracy']
+            self._adv_acc_list.append(adv_acc)
+            if len(self._adv_acc_list) == 1:
+                self._smoothed_list.append(adv_acc)
+            else:
+                self._smoothed_list.append(smooth_weight * self._adv_acc_list[-2] + (1 - smooth_weight) * adv_acc)
+
+            if len(self._smoothed_list) > window_size:
+                # print (np.mean(self._smoothed_list[-window_size/2:]))
+                z = np.polyfit(range(window_size), self._smoothed_list[-window_size:], 1)
+                incr_rate = z[0]
+                print (incr_rate)
+                if abs(incr_rate) < 1e-4 and self._iter_cnt > window_size:
+                # judge whether stable
+                    print (self._attack_params)
+                    if self._attack_params[1] < self._max_attack_params[1]:
+                        self._attack_params[1] += self._incr_step
+                        print ('Update attack param', self._attack_params)
+                        self._adversary = self.get_adversary(self._model, attack_params=self._attack_params)
+                        self._iter_cnt = 0
+                    else:
+                        print ('Reach max param', self._max_attack_params)
+                else:
+                    self._iter_cnt += 1
+        '''
         return measurements
 
     def to(self, device, **kwargs):
