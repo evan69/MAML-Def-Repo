@@ -508,7 +508,7 @@ def main(args):
     attack_params = [args.attack_name, args.attack_eps, args.attack_step]
 
     # adv train option
-    if args.adv_train not in ['none', 'AdvQ', 'ADML', 'new', 'AdvQ-rew', 'Curr']:
+    if args.adv_train not in ['none', 'AdvQ', 'ADML', 'new', 'AdvQ-rew', 'Curr', 'randFT', 'advFT']:
         assert False
 
     meta_learner = MetaLearner(

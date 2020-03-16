@@ -74,7 +74,7 @@ class MetaLearner(object):
         self._task_net_optim = task_net_optim
 
         # for new method
-        if self._adv_train == 'Curr':
+        if self._adv_train == 'Curr' or self._adv_train == 'randFT' or self._adv_train == 'advFT':
             # self._max_attack_params = copy.deepcopy(attack_params)
             # self._incr_step = attack_params[1] / 4
             # self._attack_params[1] = 0.0
@@ -106,6 +106,8 @@ class MetaLearner(object):
             for att in self._attack_params_list:
                 adversary_for_new = self.get_adversary(self._model, att)
                 self._adversary_list.append(adversary_for_new)
+            if self._adv_train == 'advFT' or self._adv_train == 'randFT':
+                self._adversary = self.get_adversary(self._model, attack_params=attack_params)
 
         if self._adv_train == 'new':
             attack_params_list = [['PGD', 0.2, 20],
@@ -140,7 +142,7 @@ class MetaLearner(object):
             adversary = GradientSignAttack(model, eps=eps)
         elif method == 'PGD':
             nb_iter = attack_params[2]
-            adversary = LinfPGDAttack(model, eps=eps, nb_iter=nb_iter)
+            adversary = LinfPGDAttack(model, eps=eps, nb_iter=nb_iter, rand_init=False)
         elif method == 'BIA':
             nb_iter = attack_params[2]
             adversary = L2BasicIterativeAttack(model, eps=eps, nb_iter=nb_iter)
@@ -280,6 +282,31 @@ class MetaLearner(object):
 
         return params
 
+    def data_augmentation(self, task, parameter, adversary, N):
+        theta_list = [parameter, ]
+        task_list = [task, ]
+        # print (task.x)
+        for i in range(N):
+            from collections import OrderedDict
+            tmp = OrderedDict()
+            for k in theta_list[-1].keys():
+                tmp[k] = theta_list[-1][k].detach()
+            self._model.update_tmp_params(tmp)
+            adv_task = self.gen_adv_task(task, adversary)
+            self._model.update_tmp_params(None)
+            task_list.append(adv_task)
+            # step 1: gen and update x
+
+            tmp = theta_list[-1]
+            # print (tmp)
+            preds_0 = self._model(task_list[0], params=tmp, embeddings=None)
+            preds = self._model(task_list[-1], params=tmp, embeddings=None)
+            loss = 0.5 * self._loss_func(preds_0, task_list[0].y) + 0.5 * self._loss_func(preds, task_list[-1].y)
+            theta = self.update_params(loss, params=tmp)
+            theta_list.append(theta)
+            # step 2: update theta
+        return task_list, theta_list
+
     def adapt(self, train_tasks, is_training):
         adapted_params = []
 
@@ -288,6 +315,9 @@ class MetaLearner(object):
         if self._adv_train == 'Curr':
             self._random_strength = random.randint(0, len(self._adversary_list) - 1)
             self._random_strength = 0
+        if self._adv_train == 'randFT':
+            assert is_training == False
+            rand_adapted_params = []
 
         embeddings_list = []
 
@@ -303,23 +333,36 @@ class MetaLearner(object):
                 adv_params = copy.deepcopy(params)
                 self._model.update_tmp_params(None) # attack current theta
                 adv_task = self.gen_adv_task(task, self._adversary)
-            if self._adv_train == 'new': # new method: reconstruct loss
-                self._model.update_tmp_params(None)
-                random_idx = random.randint(0, len(self._adversary_list)-1)
-                random_idx = 0
-                adv_task = self.gen_adv_task(task, self._adversary_list[random_idx]) # generate adv task data
-            if self._adv_train == 'Curr':
+            elif self._adv_train == 'Curr' or self._adv_train == 'advFT':
+                if not is_training:
+                    self._random_strength = -1
+                self._model.update_tmp_params(None) # attack current theta
                 adv_task = self.gen_adv_task(task, self._adversary_list[self._random_strength])
+            elif self._adv_train == 'randFT':
+                assert is_training == False
+                if not is_training:
+                    self._random_strength = -1
+                N = 6
+                # DA N times
+                adversary = self._adversary_list[-1]
+                self._model.update_tmp_params(params)
+                adv_task = self.gen_adv_task(task, adversary)
+                tmp_params = copy.deepcopy(params)
+                task_list, theta_list = self.data_augmentation(task=task, parameter=tmp_params, adversary=adversary, N=N)
+                # generate more data via DA
+                sampled_task_list = [0, 1, ] + random.sample(range(2, len(task_list)), int((N-2)*0.5))
+                # sample task list for classify
+                rand_params = copy.deepcopy(params)
+                # for rand params
 
             for i in range(self._num_updates):
                 preds = self._model(task, params=params, embeddings=embeddings)
                 loss = self._loss_func(preds, task.y)
-                if self._adv_train == 'new' or self._adv_train == 'Curr': # and self._do_inner_adv_train: # new method: reconstruct loss
+                if self._adv_train == 'Curr' or self._adv_train == 'advFT' or self._adv_train == 'randFT': # and self._do_inner_adv_train: # new method: reconstruct loss
                     adv_preds = self._model(adv_task, params=params, embeddings=embeddings)
                     adv_loss = self._loss_func(adv_preds, adv_task.y)
-                    # preds = adv_preds
-                    loss = loss + 1.0 * adv_loss
-                    # loss = adv_loss
+                    lam = 0.5
+                    loss = (1-lam) * loss + lam * adv_loss
 
                 params = self.update_params(loss, params=params)
                 if i == 0:
@@ -329,14 +372,39 @@ class MetaLearner(object):
                     adv_preds = self._model(adv_task, params=adv_params, embeddings=embeddings)
                     adv_loss = self._loss_func(adv_preds, adv_task.y)
                     adv_params = self.update_params(adv_loss, params=adv_params)
+                if self._adv_train == 'randFT':
+                    # print ('begin')
+                    # print (torch.sum(task.x - task_list[0].x))
+                    # print (torch.sum(adv_task.x - task_list[1].x))
+                    # import ipdb
+                    # ipdb.set_trace()
+                    rand_loss = 0.0
+                    tot_coeffcient = 0.0
+                    decay_u = 0.5
+                    # rand_loss = 0.0
+                    # print (sampled_task_list)
+                    # sampled_task_list = [0, 1, 2]
+                    for adv_task_ids in sampled_task_list:
+                        t = task_list[adv_task_ids]
+                        rand_preds = self._model(t, params=rand_params, embeddings=embeddings)
+                        rand_loss += (decay_u ** adv_task_ids) * self._loss_func(rand_preds, t.y)
+                        tot_coeffcient += (decay_u ** adv_task_ids)
+                    rand_loss /= tot_coeffcient
+                    rand_params = self.update_params(rand_loss, params=rand_params)
+            # params = rand_params # test
+
             adapted_params.append(params)
             if self._adv_train == 'ADML':# or (self._adv_train == 'new' and self._do_inner_adv_train):
                 adv_adapted_params.append(adv_params)
+            if self._adv_train == 'randFT':
+                rand_adapted_params.append(rand_params)
             embeddings_list.append(embeddings)
 
         measurements = self._pop_measurements()
         if self._adv_train == 'ADML':
             self._adv_adapted_params = adv_adapted_params
+        if self._adv_train == 'randFT':
+            self._rand_adapted_params = rand_adapted_params
         return measurements, adapted_params, embeddings_list
 
     def step(self, adapted_params_list, embeddings_list, val_tasks,
@@ -350,6 +418,9 @@ class MetaLearner(object):
                 adapted_params_list, embeddings_list, val_tasks)):
             if self._adv_train == 'ADML':
                 adv_adapted_params = self._adv_adapted_params[index]
+            if self._adv_train == 'randFT':
+                rand_adapted_params = self._rand_adapted_params[index]
+
             if self._attack_params != None:
                 from collections import OrderedDict
                 tmp = OrderedDict()
@@ -362,6 +433,9 @@ class MetaLearner(object):
                 adv_task = None
                 adv_loss = None
                 adv_preds = None
+
+            if self._adv_train == 'randFT':
+                adapted_params = rand_adapted_params
 
             preds = self._model(task, params=adapted_params,
                                 embeddings=embeddings)
