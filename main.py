@@ -88,6 +88,22 @@ def main(args):
             device=args.device)
         loss_func = torch.nn.CrossEntropyLoss()
         collect_accuracies = True
+    elif args.dataset == 'bird':
+        dataset = BirdMetaDataset(
+                root='data',
+                img_side_len=args.common_img_side_len,
+                img_channel=args.common_img_channel,
+                num_classes_per_batch=args.num_classes_per_batch,
+                num_samples_per_class=args.num_samples_per_class,
+                num_total_batches=args.num_batches,
+                num_val_samples=args.num_val_samples,
+                meta_batch_size=args.meta_batch_size,
+                train=is_training,
+                num_train_classes=args.num_train_classes,
+                num_workers=args.num_workers,
+                device=args.device)
+        loss_func = torch.nn.CrossEntropyLoss()
+        collect_accuracies = True
     elif args.dataset == 'multimodal_few_shot':
         dataset_list = []
         if 'omniglot' in args.multimodal_few_shot:
@@ -508,7 +524,7 @@ def main(args):
     attack_params = [args.attack_name, args.attack_eps, args.attack_step]
 
     # adv train option
-    if args.adv_train not in ['none', 'AdvQ', 'ADML', 'new', 'AdvQ-rew', 'Curr', 'randFT', 'advFT']:
+    if args.adv_train not in ['none', 'AdvQ', 'ADML', 'AdvQ-rew', 'Curr', 'randFT', 'advFT']:
         assert False
 
     meta_learner = MetaLearner(
@@ -731,8 +747,6 @@ if __name__ == '__main__':
         print('Use vanilla MAML')
         args.model_type = 'conv'
         args.embedding_type = ''
-        # if args.adv_train == 'new':
-        #     args.embedding_type = 'ConvGRU'
 
     # Device
     args.device = torch.device(args.device

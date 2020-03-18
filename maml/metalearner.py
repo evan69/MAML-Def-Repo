@@ -69,16 +69,12 @@ class MetaLearner(object):
         self._reset_measurements()
 
         self._adversary = self.get_adversary(self._model, attack_params=attack_params)
-        # self._attack_model = copy.deepcopy(self._model)
-        self._task_net = task_net
-        self._task_net_optim = task_net_optim
 
-        # for new method
+        if self._adv_train == 'new':
+            self._task_net = task_net
+            self._task_net_optim = task_net_optim
+
         if self._adv_train == 'Curr' or self._adv_train == 'randFT' or self._adv_train == 'advFT':
-            # self._max_attack_params = copy.deepcopy(attack_params)
-            # self._incr_step = attack_params[1] / 4
-            # self._attack_params[1] = 0.0
-            # self._adversary = self.get_adversary(self._model, attack_params=self._attack_params) 
             self._smoothed_list = []
             self._adv_acc_list = []
             self._iter_cnt = 0
@@ -91,11 +87,6 @@ class MetaLearner(object):
                                   ['PGD', 0.1,  12],
                                   ['PGD', 0.1,  15],
                                   ['PGD', 0.1,  20],
-                                  # ['PGD', 0.13, 15],
-                                  # ['PGD', 0.18, 18],
-                                  # ['PGD', 0.2,  20],
-                                  # ['PGD', 0.25, 20],
-                                  # ['PGD', 0.3, 20],
                                   ]
             self._adversary = self.get_adversary(self._model, attack_params=self._attack_params_list[self._query_strength])
             self._acc_list = []
@@ -109,32 +100,9 @@ class MetaLearner(object):
             if self._adv_train == 'advFT' or self._adv_train == 'randFT':
                 self._adversary = self.get_adversary(self._model, attack_params=attack_params)
 
-        if self._adv_train == 'new':
-            attack_params_list = [['PGD', 0.2, 20],
-                                  ['FGSM', 0.2, 0],
-                                  ['BIA', 0.2, 20],
-                                  ['MIA', 0.2, 20],]
-            self._adversary_list = []
-            # generate adversaries for new method
-            for att in attack_params_list:
-                adversary_for_new = self.get_adversary(self._model, att)
-                self._adversary_list.append(adversary_for_new)
-        '''
-            self._do_inner_adv_train = False
-
-            # assert task_net != None and task_net_optim != None
-            # self._task_net = task_net
-            # self._task_net_optim = task_net_optim
-
-            self._embedding_model = None
-            self._new_emb_model = embedding_model # load from mmaml here
-            self._new_emb_model.eval()
-        '''
-
     def get_adversary(self, model, attack_params):
         if attack_params == None:
             return
-        # print (attack_params)
         method = attack_params[0]
         eps = attack_params[1]
         model = model.forward_single
@@ -298,7 +266,6 @@ class MetaLearner(object):
             # step 1: gen and update x
 
             tmp = theta_list[-1]
-            # print (tmp)
             preds_0 = self._model(task_list[0], params=tmp, embeddings=None)
             preds = self._model(task_list[-1], params=tmp, embeddings=None)
             loss = 0.5 * self._loss_func(preds_0, task_list[0].y) + 0.5 * self._loss_func(preds, task_list[-1].y)
@@ -373,17 +340,9 @@ class MetaLearner(object):
                     adv_loss = self._loss_func(adv_preds, adv_task.y)
                     adv_params = self.update_params(adv_loss, params=adv_params)
                 if self._adv_train == 'randFT':
-                    # print ('begin')
-                    # print (torch.sum(task.x - task_list[0].x))
-                    # print (torch.sum(adv_task.x - task_list[1].x))
-                    # import ipdb
-                    # ipdb.set_trace()
                     rand_loss = 0.0
                     tot_coeffcient = 0.0
-                    decay_u = 0.5
-                    # rand_loss = 0.0
-                    # print (sampled_task_list)
-                    # sampled_task_list = [0, 1, 2]
+                    decay_u = 0.7
                     for adv_task_ids in sampled_task_list:
                         t = task_list[adv_task_ids]
                         rand_preds = self._model(t, params=rand_params, embeddings=embeddings)
@@ -454,11 +413,6 @@ class MetaLearner(object):
                 ac_preds = self._model(task, params=adv_adapted_params, embeddings=embeddings)
                 ThetaA_DC_loss = self._loss_func(adv_preds, adv_task.y)
                 loss = ThetaC_DA_loss + ThetaA_DC_loss
-            elif self._adv_train == 'new':
-                if is_training:
-                    origin_losses.append(loss.detach())
-                    # record origin loss
-                loss = adv_loss
             elif self._adv_train == 'AdvQ-rew':
                 loss = adv_loss
                 # same as AdvQ
@@ -488,23 +442,6 @@ class MetaLearner(object):
                 # same as AdvQ
             post_update_losses.append(loss)
 
-        '''
-        if self._adv_train == 'new' and is_training:
-            loss_rate_list = [(post_update_losses[i].detach() - origin_losses[i], i, self._random_idx_list[i]) for i in range(len(origin_losses))]
-            loss_rate_list.sort()
-
-            clip_num = int(0.3 * len(loss_rate_list))
-            for item in loss_rate_list[:clip_num]:
-                task_out = self._task_net.forward(self._task_emb_list[item[1]])
-                # print (item[0], item[1], item[2], task_out)
-                ground_truth = torch.LongTensor([item[2]]).cuda()
-                cri = torch.nn.CrossEntropyLoss()
-                task_net_loss = cri(task_out.cuda(), ground_truth.cuda())
-                # backward
-                self._task_net_optim.zero_grad()
-                task_net_loss.backward()
-                self._task_net_optim.step()
-        '''
         mean_loss = torch.mean(torch.stack(post_update_losses))
         if is_training:
             mean_loss.backward()
@@ -529,12 +466,6 @@ class MetaLearner(object):
         if self._adv_train == 'Curr':
             adv_acc = measurements['adv_accuracy']
             print ('Current query param', self._attack_params_list[self._query_strength], adv_acc)
-            # adv_acc = measurements['adv_accuracy']
-            # self._acc_list[self._random_strength].append(adv_acc)
-            # print(self._random_strength, np.mean(self._acc_list[self._random_strength]))
-            # for i,item in enumerate(self._acc_list):
-            #     print (i,np.mean(item))
-
             window_size = 2000
             smooth_weight = 0.9
             self._adv_acc_list.append(adv_acc)
